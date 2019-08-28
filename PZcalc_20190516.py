@@ -27,14 +27,12 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20190828"
+__version__ = "20190516"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
 
-# 20190828 Version 1.1
-# Add the AO correction factor to the calculation and the file output
-
+# 20190516 Version 1.0
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal
@@ -102,9 +100,8 @@ class PZcalc(object):
                     Output files will be placed within the target folder using station name as part of the file name.
                    
         PZCalc will generate two plots, as well as an output file called "<stationname>.paz" containing the 
-        poles and zeros for the station, along with the sensitivity and AO correction factor. 
-        These plots and text may then be placed within the station file.
-        
+        poles and zeros for the station. These plots and text may then be placed within the station file.
+        Eventual versions of this code will create a station .xml file for use with modern seismic analysis software.
 
 
        Useage requirements: You must have installed both Python version 3 
@@ -167,18 +164,16 @@ def calfiles(infolder):
 
 def freqrange(range):   # range is a value between 1 and 3 where
                         # 1  = 0.125 to 30 seconds (medium-long period i.e. SKD)
-                        # 2 = 0.067 to 20 seconds  (short period, i.e. SKM,SM3,S1P)
+                        # 2 = 0.125 to 20 seconds  (short period, i.e. SKM,SM3,S1P)
                         # 3 = 0.005 to 10 seconds  (very short period, i.e. geophone)
     Period = []
     Frequency = []
     Period.append \
         (np.concatenate((np.arange(30.0,5.0,-5.0),np.arange(9.0,2.5,-1.5), \
          np.arange(2.5,1.0,-0.1),[0.75,0.666,0.5,0.333,0.25,0.2,0.125]),axis=None))
-    #
     Period.append \
         (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067]),axis=None))
-    #
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125]),axis=None))
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
          np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.01,0.005]),axis=None))
@@ -388,25 +383,19 @@ def respplot2(plotchan,outfil):
 
     title = "Frequency response and Phase response vs time \n Calculated from published parameters" \
             + "for cal date of "+plotchan[0][1] # use the first channel's date.
-    colorwheel = ['blue','orange','green','red','cyan','magenta', \
-                  'blue','orange','green','red','cyan','magenta', \
-                  'blue','orange','green','red','cyan','magenta', \
-                  'blue','orange','green','red','cyan','magenta'  ]
-#      Don't annotate the record with channel names if there's more than six channels. Its too busy.
-    XY = [[[0.02,100],[0.02,60.0],[0.02,35],[0.02,600],[0.02,350.0],[0.02,200]], \
-          [[0.015,0.4],[0.22,0.4],[3.0,0.4],[0.015,0.4],[0.22,0.4],[3.0,0.4]]]
-
+    colorwheel = ['blue','orange','green','red','cyan','magneta']
+    XY = [[[0.02,100],[0.02,60.0],[0.02,35]],[[0.015,0.2],[0.22,0.2],[3.0,0.2]]]
                 # Determine the min/max x axis scale to fit the frequency band.
-    maximum=0
-    minimum=1.0E+6 # version 1 had conflict with variables named 'max' and 'min'
+    max=0
+    min=1.0E+6
     for p in plotchan:
-        if (np.amax(p[2]) > maximum):
-            maximum = np.amax(p[2])
-        if (np.amin(p[2]) < minimum):
-            minimum = np.amin(p[2])
+        if (np.amax(p[2]) > max):
+            max = np.amax(p[2])
+        if (np.amin(p[2]) < min):
+            min = np.amin(p[2])
 
     plt.figure()
-    plt.axis([minimum*0.1,maximum*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
+    plt.axis([min*0.1,max*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
                 # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
         plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5)
@@ -419,14 +408,13 @@ def respplot2(plotchan,outfil):
                 # plot the axes
     plt.xlabel('Period [Seconds]')
     plt.ylabel('Amplitude (microns/mm)')
-    plt.text(maximum*2.6, 0.1, 'Phase (Seconds)', fontsize=11,
+    plt.text(max*2.6, 0.1, 'Phase (Seconds)', fontsize=11,
                    rotation=90.0, rotation_mode='anchor')
     plt.grid(True, which="both")
-    if len(plotchan)<7:
-        for i in range(0,len(plotchan)):
-            plt.annotate(plotchan[i][0] + " amp",         xy=XY[0][i],xytext=XY[0][i], color = colorwheel[i])
-            plt.annotate(plotchan[i][0]+" phase",xy=XY[1][i],xytext=XY[1][i], color = colorwheel[i])
-    plt.annotate("Inverted parameters from calculated poles & Zeros",xy=(minimum*0.2,0.125),xytext=(minimum*0.2,0.125),color='red')
+    for i in range(0,len(plotchan)):
+        plt.annotate(plotchan[i][0] + " amp",         xy=XY[0][i],xytext=XY[0][i], color = colorwheel[i])
+        plt.annotate(plotchan[i][0]+" phase",xy=XY[1][i],xytext=XY[1][i], color = colorwheel[i])
+    plt.annotate("Inverted parameters from calculated poles & Zeros",xy=(min*0.2,0.125),xytext=(min*0.2,0.125),color='red')
     plt.suptitle(title) 
 
     plt.savefig(outfil+".png")
@@ -486,7 +474,7 @@ def processchannel(channel):
     Caldate   = channel[1]
     Period,frequencies = freqrange(channel[2])
     frequencies = np.array(frequencies)
-    Gain,Phase = SKMcalc(Period,channel[3],channel[4],channel[5],channel[6],channel[7],channel[8])
+    Gain,Phase = SKMcalc(Period,channel[3],channel[4],channel[6],channel[6],channel[7],channel[8])
     Phasedeg = phase2degree(Phase,Period)
     response = np.array(Gain, dtype=np.float32)
 
@@ -537,23 +525,10 @@ def processchannel(channel):
     print('\n')
     inverted_resp = pazto_freq_resp(freqs=frequencies, zeros=best_zeros, poles=best_poles,scale_fac=best_scale_fac)
     inverted_phase = phasecalc(inverted_resp)
-
-    # PAZ gain constant is a convolution of the AO normalization factor and the instrument magnification.
-    # Create code that properly breaks apart the AO normalization and sensitivity such that the plot equals 1.0 at the peak
-    # frequency, and report both AO normalization, peak frequency, and the amplification for use in a proper PZ file. 
-    AO_index = np.argmax(np.abs(inverted_resp))
-    Sense = np.abs(inverted_resp[AO_index])
-    Sensefreq = 1./Period[AO_index] # in Hz.
-    AO_norm = best_scale_fac/Sense
-    # Also must include frequency where sensitivity is highest
- 
     paz =      []
     paz.append(best_poles)
     paz.append(best_zeros)
     paz.append(best_scale_fac)
-    paz.append(AO_norm)
-    paz.append(Sense)
-    paz.append(Sensefreq)
     paz.append(evaluation)
     paz.append(Component)
     plotchan = []
@@ -568,22 +543,17 @@ def processchannel(channel):
     return(plotchan,paz)
 
 def pazsave(outfile,Paz):
-
         # paz = poles and zeros.
         # paz[0] = poles
         # paz[1] = zeros
         # paz[2] = scale factor
-        # paz[3] = AO normalization factor
-        # paz[4] = max sensitivity
-        # paz[5] = frequency of max sensitivity in Hz
-        # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
-        # paz[7] = component name        # paz = poles and zeros.
-
+        # paz[3] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
+        # paz[4] = component name
     for  paz in Paz:
         with open(outfile,'a+') as f:
 
-            f.write("For channel {}:\n".format(paz[7]))
-            print("For channel {}:\n".format(paz[7]))
+            f.write(f"For channel {paz[4]}:\n")
+            print(f"For channel {paz[4]}:\n")
 
             f.write("ZEROS {}\n".format(len(paz[1]) + 1 ))
             print("ZEROS: {}".format(len(paz[1]) + 1 ))
@@ -597,14 +567,8 @@ def pazsave(outfile,Paz):
                 f.write("{:e} {:e}\n".format(pole.real, pole.imag))
                 print("real:{:e} Imaginary:{:e}".format(pole.real, pole.imag))
 
-            f.write("\nAO Normalization factor {:e}\n".format(paz[3]))
-            print("\nAO Normalization constant {:2.3f}".format(paz[3]))
-            f.write("Sensitivity {:2.1f}\n".format(paz[4]))
-            print("Sensor sensitivity {:2.1f}".format(paz[4]))
-            f.write("Sensitivity frequency =  {:2.2f} Hz\n".format(paz[5]))
-            print("Sensor sensitivity frequency {:2.2f} Hz".format(paz[5]))
-            f.write("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
-            print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
+            f.write("CONSTANT {:e}\n\n".format(paz[2]))
+            print("\nsensor PAZ gain constant {:2.3f}\n------\n".format(paz[2]))
 
     spz = "SAC pole-zero file is named %s" % ( outfile )
     print ( "\n" )
@@ -623,14 +587,11 @@ def main():
                         # plotchan[4] = Phase list
                         # plotchan[5] = inverted response list
                         # plotchan[6] = inverted phase list
-        # paz[0] = poles
-        # paz[1] = zeros
-        # paz[2] = scale factor
-        # paz[3] = AO normalization factor (Not sure if it's in Hz or Radians/sec quite yet)
-        # paz[4] = max sensitivity
-        # paz[5] = frequency of max sensitivity in Hz
-        # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
-        # paz[7] = component name        # paz = poles and zeros.
+                        # paz[0]      = poles list
+                        # paz[1]      = zeros list
+                        # paz[2]      = scale factor
+                        # paz[3]      = evaluation of phase misfit. (smaller is better)
+                        # Paz[4]      = Component name
 
     fileprocess,filelist,chanprocess,channel = options()
     if fileprocess:
@@ -644,8 +605,8 @@ def main():
                 Plotchan.append(pltchan)
                 Paz.append(paz)
                 print("--")
-                print(f"Inverted values for {paz[7]} on caldate of {channel[1]}:")
-                print(f"Evaluated misfit of phase = {paz[6]:0.3f}")
+                print(f"Inverted values for {paz[4]} on caldate of {channel[1]}:")
+                print(f"Evaluated misfit of phase = {paz[3]:0.3f}")
                 print("========================================\n")
             outfil = os.path.join(os.path.dirname(file),(channel[0]+"_"+channel[1]))
             pazsave((outfil+"_paz.txt"),Paz)
@@ -658,8 +619,8 @@ def main():
         Plotchan.append(pltchan)
         Paz.append(paz)
         print("\n========================================")
-        print(f"Inverted values for {paz[7]} on caldate of {channel[1]}:")
-        print(f"Evaluated misfit of phase = {paz[6]:0.3f} \n")
+        print(f"Inverted values for {paz[4]} on caldate of {channel[1]}:")
+        print(f"Evaluated misfit of phase = {paz[3]:0.3f} \n")
         outfil = os.path.join(os.getcwd(),(channel[0]+"_"+channel[1]))
         pazsave((outfil+"_paz.txt"),Paz)
         respplot2(Plotchan,(outfil+"_response"))
