@@ -27,12 +27,16 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20190828"
+__version__ = "20200114"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
+# 20200114 version 1.2
+# Add the ability to generate dataless SEED files from an enhanced CAL file.
+# This requires an additional supplemental template file to reside in the Pyscripts
+# folder: C:/Pyscripts/dataless.pzcalc_template.seed
 
-# 20190828 Version 1.1
+# 20190828 version 1.1
 # Add the AO correction factor to the calculation and the file output
 
 import numpy as np
@@ -41,7 +45,7 @@ import scipy.signal
 import scipy.optimize
 import os,csv,string,sys
 from time import gmtime,strftime
-
+from obspy.io.xseed import Parser
 
 # Now, the most important part -- The legalese:
 # COPYRIGHT ©  BOARD OF TRUSTEES OF MICHIGAN STATE UNIVERSITY
@@ -100,6 +104,14 @@ class PZcalc(object):
 
         where:     <targetfolder> will contain at least one .cal file for processing. 
                     Output files will be placed within the target folder using station name as part of the file name.
+
+       Syntax4:     PZcalc <-seed> <filename.cal>
+
+       where:      <filename.cal> is a single file name for processing, including an additional fifteen fields
+                    necessary for the generation of a dataless seed file.
+                    Output will be placed within the folder containing this file.
+                    Using this method enables you to input the station calibration date.
+
                    
         PZCalc will generate two plots, as well as an output file called "<stationname>.paz" containing the 
         poles and zeros for the station, along with the sensitivity and AO correction factor. 
@@ -131,6 +143,7 @@ class PZcalc(object):
        c:\> python PZCalc.py -crawl <targetfolder>
             where,
             <targetfolder> is the folder containing the calibration files ending in a .cal extension.
+
         The output files will be placed within the same folder. They will be of the type .png and .paz
         --       
         Sample file format:
@@ -149,10 +162,62 @@ class PZcalc(object):
         RY_UURS.MHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
         RY_UURS.MHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
         RY_UURS.MHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
+        -------
+        As another example, if you want to generate a dataless seed file for the station, 
+        add these additional fifteen fields to the calibration file using the following template:
+        Good practive in file naming is to differentiate the cal file by adding SEED to the filename,
+        such as: RY_UURS_SEED.CAL for the following example.
+
+        * Note that a space is used as the field separator within the following fields. 
+
+        Use the -seed option in lieu of the -file option to use this cal file format.
+
+        beginning_time 1949-08-29T00:00:00.000000Z 
+        end_time 1991-12-26T23:59:59.999999Z
+        network_id RY
+        station_description UURS
+        instrument_description SKM3
+        network_code RY
+        station_code UURS
+        location_identifier
+        site_name Ust-Urkima
+        latitude 55.31
+        longitude 123.16
+        elevation 540
+        start_effective_date 1949-08-29T00:00:00.000000Z
+        end_effective_date 2020-01-14T23:59:59.000000Z
+        sample_rate 100
+        RY.UURS.HHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
+        RY.UURS.HHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
+        RY.UURS.HHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
+
         
        '''
 
 
+
+def get_dataless_block(metadata):
+    #                               preload the dataless seed fields from the calibration
+    p = Parser("C:/Pyscripts/dataless.pzcalc_template.seed")
+    blk = p.blockettes
+
+    #                               Basic changes to existing fields necessary to customize the dataless seed file
+
+    blk[10][0].beginning_time = metadata['beginning_time'] 
+    blk[10][0].end_time = metadata['end_time']                  # These appear to be unused within pdcc
+    blk[11][0].station_identifier_code = metadata['network_id'] # This is overritten by blk[50].network_code
+    blk[33][0].abbreviation_description = metadata['station_description']
+    blk[33][1].abbreviation_description = metadata['instrument_description']
+    # metadata['location_identifier']
+    blk[50][0].network_code = metadata['network_code']
+    blk[50][0].station_call_letters = metadata['station_code']
+    blk[50][0].site_name = metadata['site_name']
+    blk[50][0].latitude = metadata['latitude']
+    blk[50][0].longitude = metadata['longitude']
+    blk[50][0].elevation = metadata['elevation']
+    blk[50][0].start_effective_date = UTCDateTime(metadata['start_effective_date'])
+    blk[50][0].end_effective_date = metadata['end_effective_date']
+    return(blk)
 
 
 def calfiles(infolder):
@@ -173,11 +238,11 @@ def freqrange(range):   # range is a value between 1 and 3 where
     Frequency = []
     Period.append \
         (np.concatenate((np.arange(30.0,5.0,-5.0),np.arange(9.0,2.5,-1.5), \
-         np.arange(2.5,1.0,-0.1),[0.75,0.666,0.5,0.333,0.25,0.2,0.125]),axis=None))
+         np.arange(2.5,1.0,-0.1),[0.75,0.666,0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04]),axis=None))
     #
     Period.append \
         (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067]),axis=None))
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.03,0.02,0.01]),axis=None))
     #
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
@@ -227,6 +292,7 @@ def misfit(a,b):    # Bring in two lists, compare them,
 def options():      # Get command line options and process them
     fileprocess = False
     chanprocess = False
+    seed = False
     channel = []
     filelist = []
     if len(sys.argv) > 1:
@@ -248,18 +314,21 @@ def options():      # Get command line options and process them
                 print('Error browsing the folder {0}.\n -crawl requires a valid folder entry.\n\n'.format(sys.argv[2]))
                 print("Type 'PZcalc -help' for help.")
 
-        elif 'file' in sys.argv[1].lower(): 
+        elif ('file' in sys.argv[1].lower()) or ('seed' in sys.argv[1].lower()): 
                     # There should be one additional option: The destination file.
             try:
                 if len(sys.argv) > 2:
+                   if 'seed' in sys.argv[1].lower():
+                       seed = True
                    fileprocess = True                
                    filelist = []
                    filelist.append(sys.argv[2].replace("/","\\"))
                    print("Processing file: {0}".format(filelist))
                     # Return the file as a file list with one item.
                     # Then process the list of files.
+ 
                 else:
-                   print("-file requires an additional argument representing the target folder.\n")
+                   print("-file or -seed requires an additional argument representing the target folder.\n")
                    print("Type 'PZcalc -help' for help.")
             except:
                 print(sys.exc_info(),"\n")
@@ -301,7 +370,7 @@ def options():      # Get command line options and process them
         print('PZcalc requires at least one option: -help, -chan, -file, or -crawl.')
         print("Type 'PZcalc -help' for more help.")
 
-    return(fileprocess,filelist,chanprocess,channel)
+    return(fileprocess,filelist,chanprocess,channel,seed)
 
 
     
@@ -344,18 +413,23 @@ def degree2phase(phasedeg,period):
         phasesec.append((float(phasedeg[i]+270.0)/360.0)*float(period[i]))
     return(phasesec)
 
+    # Readcal returns a list of channel calibration parameters from a calibration file.
+    # Depending on if a dataless seed is to be generated or not.
+
+def readcal(infile,seed):
+    if seed == True:
+        Metadata,Channel = dataless_load(infile)  # seed is enabled so attempt to open the enhanced cal
+    else:
+        Metadata,Channel = load(infile) # open the normal cal
+    return(Metadata,Channel)
 
 
 
-                    # Readcal returns a list of channel calibration parameters from a calibration file.
-def readcal(infile):
-    Component = []
-    Period = []
-    Frequency = []
-    Resp = []
+def load(infile):                        # Read a simple cal file without metadata
     with open(infile,'r') as fin:
         list = csv.reader(fin)
         Channel = []
+        Metadata = [] # This list is returned empty
         for row in list:
             if row:
                 channel= []
@@ -370,7 +444,174 @@ def readcal(infile):
                 channel.append(float(c[7]))             # S2  
                 channel.append(float(c[8]))             # Vm  
             Channel.append(channel)
-    return(Channel)
+    return(Metadata,Channel)
+
+#
+#                                        Load the metadata-enabled calibration file
+#
+def dataless_load(infile):
+    with open(infile,'r') as fin:
+        list = csv.reader(fin)
+        rowcnt = 0
+        stack = []
+        header = []
+        Channel = []
+        metadata = {}              
+        for row in list:
+            if len(row) > 0:
+                r = row[0].split()
+                if rowcnt < 15:      # metadata enabled cal file has fifteen fields before the calibration information.
+                    header.append(r)
+                    rowcnt +=1
+
+                else:
+                    channel = []
+                    channel.append(r[0])                    # Component
+                    channel.append(r[1].replace("/","_"))   # CalDate
+                    channel.append(int(r[2]))               # Range 
+                    channel.append(float(r[3]))             # Ts  
+                    channel.append(float(r[4]))             # Ds  
+                    channel.append(float(r[5]))             # Tg  
+                    channel.append(float(r[6]))             # Dg  
+                    channel.append(float(r[7]))             # S2  
+                    channel.append(float(r[8]))             # Vm
+                    Channel.append(channel)
+                    #stack.append(r)
+                    rowcnt+=1
+        for data in header:                                 # metadata is a dictionary with these fields:
+            if len(data) > 1:
+                metadata[data[0]] = data[1]
+            else:
+                metadata[data[0]] = ""          
+                                                            # 'beginning_time'
+                                                            # 'end_time' 
+                                                            # 'network_id'
+                                                            # 'station_description'
+                                                            # 'instrument_description'
+                                                            # 'network_code'
+                                                            # 'station_code'
+                                                            # 'location_identifier'
+                                                            # 'site_name'
+                                                            # 'latitude'
+                                                            # 'longitude'
+                                                            # 'elevation'
+                                                            # 'start_effective_date'
+                                                            # 'end_effective_date'
+                                                            # 'sample_rate
+       
+        return(metadata,Channel)
+    
+
+
+#
+# Generate the dataless seed file, based on the metadata and the poles & zeros included in Paz
+#
+
+def generate_dataless(Paz,Metadata):  
+        # paz = poles and zeros.
+        # paz[0] = poles
+        # paz[1] = zeros
+        # paz[2] = scale factor
+        # paz[3] = AO normalization factor
+        # paz[4] = Vo max sensitivity
+        # paz[5] = frequency of max sensitivity in Hz
+        # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
+        # paz[7] = component name        # paz = poles and zeros.
+        # paz[8] = calibration date
+        
+    Channel = []
+    Caldate = []
+    Real_pole = []      # Poles.real
+    Imaginary_pole = [] # Poles.imaginary
+    Real_zero = []      # Zeros.real
+    Imaginary_zero = [] # Zeros.imaginary
+    AO_norm = []        # Normalization factor
+    Norm_freq = []      # Normalization frequency at which point max sensitivity is reached & normalized gain = 1 
+    Vo = []             # Max sensitivity (peak amplification factor between ground motion and its deflection on paper)
+
+    for  paz in Paz: # There should be three channels
+        pole_real = []
+        pole_imag = []
+        for pole in paz[0]:
+            pole_real.append(pole.real)
+            pole_imag.append(pole.imag)
+        zero_real = []
+        zero_imag = []
+        for zero in paz[1]: #              assemble the lists for real and imaginary parts
+            zero_real.append(zero.real)
+            zero_imag.append(zero.imag)
+        Real_pole.append(pole_real)
+        Imaginary_pole.append(pole_imag)
+        Real_zero.append(zero_real)
+        Imaginary_zero.append(zero_imag)
+
+        AO_norm.append(paz[3])
+        Vo.append(paz[4])
+        Norm_freq.append(paz[5])
+        Channel.append(paz[7][paz[7].rfind('.')+1:]) # Take last section to determine the channel name
+        Caldate.append(paz[8])
+ 
+#
+#                                Open the template and modify it with the appropriate information
+#
+        
+    p = Parser("C:/reftek/dimas/responses/dataless.pzcalc_template.seed")
+    blk = p.blockettes
+
+    # Basic changes to existing fields necessary to customize the dataless seed file
+
+    blk[10][0].beginning_time = Metadata['beginning_time'] 
+    blk[10][0].end_time = Metadata['end_time']                  # These appear to be unused within pdcc
+
+    blk[11][0].station_identifier_code = Metadata['network_id'] # is not necessary as it is overridden by blk[50].network_code
+
+    blk[33][0].abbreviation_description = Metadata['station_description']
+    blk[33][1].abbreviation_description = Metadata['instrument_description']
+    blk[50][0].network_code = Metadata['network_code']
+    blk[50][0].station_call_letters = Metadata['station_code']
+    blk[50][0].site_name = Metadata['site_name']
+    blk[50][0].latitude = Metadata['latitude']
+    blk[50][0].longitude = Metadata['longitude']
+    blk[50][0].elevation = Metadata['elevation']
+    blk[50][0].start_effective_date = Metadata['start_effective_date']
+    blk[50][0].end_effective_date = Metadata['end_effective_date']
+    samplerate = Metadata['sample_rate'] # Output from wavetrac is 100 sps so make it so.
+    mult = int(len(blk[58])/3) # Assume that the length of the block is due to there being three channels.
+    for i in range(0,len(blk[52])):
+        blk[52][i].sample_rate = samplerate
+    
+    for i, cha in enumerate(Channel):
+        blk[52][i].channel_identifier = cha #'HH%s' % cha
+        blk[52][i].location_identifier = Metadata['location_identifier']
+        blk[52][i].latitude = blk[50][0].latitude
+        blk[52][i].longitude = blk[50][0].longitude
+        blk[52][i].elevation = blk[50][0].elevation
+        blk[52][i].start_date = blk[50][0].start_effective_date
+        blk[52][i].end_date = blk[50][0].end_effective_date
+        blk[52][i].sample_rate = samplerate
+        blk[53][i].number_of_complex_poles = 5
+        blk[53][i].real_pole = Real_pole[i]
+        blk[53][i].imaginary_pole = Imaginary_pole[i]
+        blk[53][i].real_pole_error = [0, 0, 0, 0, 0]
+        blk[53][i].imaginary_pole_error = [0, 0, 0, 0, 0]
+        blk[53][i].number_of_complex_zeros = 5
+        blk[53][i].real_zero = Real_zero[i]
+        blk[53][i].imaginary_zero = Imaginary_zero[i]
+        blk[53][i].real_zero_error = [0, 0, 0, 0, 0]
+        blk[53][i].imaginary_zero_error = [0, 0, 0, 0, 0]
+        blk[53][i].A0_normalization_factor = AO_norm[i]
+        blk[53][i].normalization_frequency = Norm_freq[i]
+        # stage sequence number 1, seismometer gain
+        blk[58][i*mult].sensitivity_gain = Vo[i]
+        # stage sequence number 3, digitizer gain
+        blk[58][i*mult+2].sensitivity_gain = 100.0 # This is fixed as 100 cm to 1 m, per PNE2SAC output.
+        # stage sequence number 0, overall sensitivity
+        blk[58][(i+1)*mult-1].sensitivity_gain = Vo[i] * 100 # There are 100 centimeters in a meter.
+    outfile = os.path.join(os.getcwd(),("dataless."+blk[11][0].station_identifier_code+"_"+ \
+                                        blk[50][0].station_call_letters+".seed"))
+    p.write_seed(outfile)
+
+
 
 
 
@@ -406,8 +647,8 @@ def respplot2(plotchan,outfil):
             minimum = np.amin(p[2])
 
     plt.figure()
-    plt.axis([minimum*0.1,maximum*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
-                # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
+#    plt.axis([minimum*0.1,maximum*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
+    plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
         plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5)
         plt.loglog(plotchan[i][2],np.abs(plotchan[i][5]),color='red',lw=1)
@@ -430,7 +671,7 @@ def respplot2(plotchan,outfil):
     plt.suptitle(title) 
 
     plt.savefig(outfil+".png")
-    plt.show()
+    plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
 
 
 
@@ -529,8 +770,8 @@ def processchannel(channel):
             best_scale_fac=new_scale_fac
             print(f'\nIteration # {z}: Phase misfit reduced to {curvefit:0.3f}')
             evaluation = curvefit
-            if evaluation < 3.5:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
-                break               # Good enough. End the loop early to speed up the process.
+            if evaluation < 5.0:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
+                break               # Less than 5 is Good enough. End the loop early to speed up the process.
         else:
             sys.stdout.write('.')
             sys.stdout.flush()
@@ -556,6 +797,7 @@ def processchannel(channel):
     paz.append(Sensefreq)
     paz.append(evaluation)
     paz.append(Component)
+    paz.append(Caldate)
     plotchan = []
     plotchan.append(Component)
     plotchan.append(Caldate)
@@ -578,15 +820,19 @@ def pazsave(outfile,Paz):
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
         # paz[7] = component name        # paz = poles and zeros.
+        # paz[8] = calibration date
 
     for  paz in Paz:
+        
         with open(outfile,'a+') as f:
 
-            f.write("For channel {}:\n".format(paz[7]))
+            f.write("Channel: {}\n".format(paz[7]))
             print("For channel {}:\n".format(paz[7]))
+            f.write("Caldate: {}\n".format(paz[8]))
+            print("on Calibration date: {}\n".format(paz[8]))
 
-            f.write("ZEROS {}\n".format(len(paz[1]) + 1 ))
-            print("ZEROS: {}".format(len(paz[1]) + 1 ))
+            f.write("ZEROS {}\n".format(len(paz[1]))) # SAC may want an additional pole to convert to displacement
+            print("ZEROS: {}".format(len(paz[1]))) # but these cals already represent displacement.
             for zero in paz[1]:
                 f.write("{:e} {:e}\n".format(zero.real, zero.imag))
                 print("real:{:e} Imaginary:{:e}".format(zero.real, zero.imag))
@@ -597,13 +843,13 @@ def pazsave(outfile,Paz):
                 f.write("{:e} {:e}\n".format(pole.real, pole.imag))
                 print("real:{:e} Imaginary:{:e}".format(pole.real, pole.imag))
 
-            f.write("\nAO Normalization factor {:e}\n".format(paz[3]))
-            print("\nAO Normalization constant {:2.3f}".format(paz[3]))
-            f.write("Sensitivity {:2.1f}\n".format(paz[4]))
+            f.write("AO_Normalization_factor: {:e}\n".format(paz[3]))
+            print("\nAO_Normalization_Factor {:2.3f}".format(paz[3]))
+            f.write("Sensitivity: {:2.1f}\n".format(paz[4]))
             print("Sensor sensitivity {:2.1f}".format(paz[4]))
-            f.write("Sensitivity frequency =  {:2.2f} Hz\n".format(paz[5]))
+            f.write("Sensitivity_frequency(Hz): {:2.2f}\n".format(paz[5]))
             print("Sensor sensitivity frequency {:2.2f} Hz".format(paz[5]))
-            f.write("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
+            f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
             print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
 
     spz = "SAC pole-zero file is named %s" % ( outfile )
@@ -631,15 +877,15 @@ def main():
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
         # paz[7] = component name        # paz = poles and zeros.
-
-    fileprocess,filelist,chanprocess,channel = options()
+    
+    fileprocess,filelist,chanprocess,channel,seed = options()
     if fileprocess:
         for file in filelist:
-            Channel = readcal(file) # multiple channels
+            Metadata,Channel = readcal(file,seed) # multiple channels, and seed gets populated if seed is True
             Plotchan = []
             Paz = []
             for channel in Channel:
-                print(channel)
+                print(f' channel is defined as {channel}')
                 pltchan,paz = processchannel(channel)
                 Plotchan.append(pltchan)
                 Paz.append(paz)
@@ -649,9 +895,14 @@ def main():
                 print("========================================\n")
             outfil = os.path.join(os.path.dirname(file),(channel[0]+"_"+channel[1]))
             pazsave((outfil+"_paz.txt"),Paz)
+
+            if seed:   # Generate a dataless seed file 
+                generate_dataless(Paz,Metadata)
+
             respplot2(Plotchan,(outfil+"_response"))           
 
-    elif chanprocess: 
+    elif chanprocess:
+        Metadata = []  # Initialize, because it isnt used but is passed to pazsave
         Plotchan = []
         Paz = []
         pltchan,paz = processchannel(channel)
@@ -661,7 +912,7 @@ def main():
         print(f"Inverted values for {paz[7]} on caldate of {channel[1]}:")
         print(f"Evaluated misfit of phase = {paz[6]:0.3f} \n")
         outfil = os.path.join(os.getcwd(),(channel[0]+"_"+channel[1]))
-        pazsave((outfil+"_paz.txt"),Paz)
+        pazsave((outfil+"_paz.txt"),Paz,Metadata,seed)
         respplot2(Plotchan,(outfil+"_response"))
 
     else:
