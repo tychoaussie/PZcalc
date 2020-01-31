@@ -1,0 +1,18 @@
+beginning_time 1949-08-29T00:00:00.000000Z 
+end_time 1991-12-26T23:59:59.999999Z
+network_id RY
+station_description SOTR
+instrument_description VEGIK
+network_code RY
+station_code SOTR
+location_identifier
+site_name Stolb
+latitude 72.4
+longitude 126.825
+elevation 50
+start_effective_date 1986-07-12T00:00:00.000000Z
+end_effective_date 1988-07-12T23:59:59.000000Z
+sample_rate 100
+RY.SOTR.HHN 02/10/1987 1 1.04 0.50 0.330 1.710 0.200 20430
+RY.SOTR.HHE 02/10/1987 1 1.00 0.50 0.330 1.710 0.200 23250
+RY.SOTR.HHZ 02/10/1987 1 1.00 0.40 0.320 1.710 0.200 19820
