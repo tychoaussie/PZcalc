@@ -1,0 +1,18 @@
+beginning_time 1949-08-29T00:00:00.000000Z 
+end_time 1991-12-26T23:59:59.999999Z
+network_id RY
+station_description 
+instrument_description
+network_code RY
+station_code UNR
+location_identifier
+site_name
+latitude
+longitude
+elevation
+start_effective_date
+end_effective_date
+sample_rate
+UNR.HHN 04/25/1987 1 1.74 0.530 0.370 1.740 0.160 47660
+UNR.HHE 04/25/1987 1 1.74 0.530 0.370 1.840 0.160 45810
+UNR.HHZ 04/25/1987 1 1.74 0.530 0.370 1.840 0.160 39910

@@ -27,6 +27,7 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
+<<<<<<< HEAD
 __version__ = "20200526"
 __license__ = "MIT"
 
@@ -46,6 +47,12 @@ __license__ = "MIT"
 # as appropriate. This is because response removal with version 1.2 leads to a sign reversal
 # in the signal. Also, move the PZcalc algorithm to four poles and zeros, rather than five.
 #
+=======
+__version__ = "20200114"
+__license__ = "MIT"
+
+# -*- coding: utf-8 -*-
+>>>>>>> origin/master
 # 20200114 version 1.2
 # Add the ability to generate dataless SEED files from an enhanced CAL file.
 # This requires an additional supplemental template file to reside in the Pyscripts
@@ -257,7 +264,11 @@ def freqrange(range):   # range is a value between 1 and 3 where
     #
     Period.append \
         (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
+<<<<<<< HEAD
          np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
+=======
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.03,0.02,0.01]),axis=None))
+>>>>>>> origin/master
     #
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
@@ -505,7 +516,11 @@ def generate_dataless(Paz,Metadata):
         # paz[0] = poles
         # paz[1] = zeros
         # paz[2] = scale factor
+<<<<<<< HEAD
         # paz[3] = AO normalization factor where Scale factor is multiplied by 2PI * (number of poles - number of zeroes)
+=======
+        # paz[3] = AO normalization factor
+>>>>>>> origin/master
         # paz[4] = Vo max sensitivity
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
@@ -548,7 +563,11 @@ def generate_dataless(Paz,Metadata):
 #                                Open the template and modify it with the appropriate information
 #
         
+<<<<<<< HEAD
     p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
+=======
+    p = Parser("C:/reftek/dimas/responses/dataless.pzcalc_template.seed")
+>>>>>>> origin/master
     blk = p.blockettes
 
     # Basic changes to existing fields necessary to customize the dataless seed file
@@ -582,6 +601,7 @@ def generate_dataless(Paz,Metadata):
         blk[52][i].start_date = blk[50][0].start_effective_date
         blk[52][i].end_date = blk[50][0].end_effective_date
         blk[52][i].sample_rate = samplerate
+<<<<<<< HEAD
         blk[53][i].number_of_complex_poles = 4
         blk[53][i].real_pole = Real_pole[i]
         blk[53][i].imaginary_pole = Imaginary_pole[i]
@@ -592,6 +612,18 @@ def generate_dataless(Paz,Metadata):
         blk[53][i].imaginary_zero = Imaginary_zero[i]
         blk[53][i].real_zero_error = [0, 0, 0, 0]
         blk[53][i].imaginary_zero_error = [0, 0, 0, 0]
+=======
+        blk[53][i].number_of_complex_poles = 5
+        blk[53][i].real_pole = Real_pole[i]
+        blk[53][i].imaginary_pole = Imaginary_pole[i]
+        blk[53][i].real_pole_error = [0, 0, 0, 0, 0]
+        blk[53][i].imaginary_pole_error = [0, 0, 0, 0, 0]
+        blk[53][i].number_of_complex_zeros = 5
+        blk[53][i].real_zero = Real_zero[i]
+        blk[53][i].imaginary_zero = Imaginary_zero[i]
+        blk[53][i].real_zero_error = [0, 0, 0, 0, 0]
+        blk[53][i].imaginary_zero_error = [0, 0, 0, 0, 0]
+>>>>>>> origin/master
         blk[53][i].A0_normalization_factor = AO_norm[i]
         blk[53][i].normalization_frequency = Norm_freq[i]
         # stage sequence number 1, seismometer gain
@@ -605,6 +637,7 @@ def generate_dataless(Paz,Metadata):
     p.write_seed(outfile)
 
 
+<<<<<<< HEAD
 def exportcsv(plotchan,outfil):
     outfile = outfil+".csv"
     with open(outfile,mode='a+',newline='') as response:
@@ -615,6 +648,8 @@ def exportcsv(plotchan,outfil):
             inverted_phasesec=degree2phase(channel[6],channel[2])	
             for i in range(0,len(channel[2])):
                 response_writer.writerow([channel[2][i],channel[3][i],np.abs(channel[5][i]),channel[4][i],inverted_phasesec[i]])			
+=======
+>>>>>>> origin/master
 
 
 
@@ -674,6 +709,10 @@ def respplot2(plotchan,outfil):
     plt.suptitle(title) 
 
     plt.savefig(outfil+".png")
+<<<<<<< HEAD
+=======
+    plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
+>>>>>>> origin/master
 
     plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
     exportcsv(plotchan,outfil)  # Export the parameters as a csv file for additional analysis
@@ -877,7 +916,11 @@ def processchannel(channel):
             best_scale_fac=new_scale_fac
             print(f'\nIteration # {z}: Phase misfit reduced to {curvefit:0.3f}')
             evaluation = curvefit
+<<<<<<< HEAD
             if evaluation < 5:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
+=======
+            if evaluation < 5.0:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
+>>>>>>> origin/master
                 break               # Less than 5 is Good enough. End the loop early to speed up the process.
         else:
             sys.stdout.write('.')
@@ -1002,6 +1045,7 @@ def main():
                 print("========================================\n")
             outfil = os.path.join(os.path.dirname(file),(channel[0]+"_"+channel[1]))
             pazsave((outfil+"_paz.txt"),Paz)
+<<<<<<< HEAD
 
             if seed:   # Generate a dataless seed file 
                 generate_dataless(Paz,Metadata)
@@ -1009,6 +1053,14 @@ def main():
             respplot2(Plotchan,(outfil+"_response_period"))
             respplot1(Plotchan,(outfil+"_response"))           
 
+=======
+
+            if seed:   # Generate a dataless seed file 
+                generate_dataless(Paz,Metadata)
+
+            respplot2(Plotchan,(outfil+"_response"))           
+
+>>>>>>> origin/master
     elif chanprocess:
         Metadata = []  # Initialize, because it isnt used but is passed to pazsave
         Plotchan = []
@@ -1021,7 +1073,11 @@ def main():
         print(f"Evaluated misfit of phase = {paz[6]:0.3f} \n")
         outfil = os.path.join(os.getcwd(),(channel[0]+"_"+channel[1]))
         pazsave((outfil+"_paz.txt"),Paz,Metadata,seed)
+<<<<<<< HEAD
         respplot2(Plotchan,(outfil+"_response_period"))
+=======
+        respplot2(Plotchan,(outfil+"_response"))
+>>>>>>> origin/master
 
     else:
         print('\nNo files processed. No channels processed.')

@@ -1,0 +1,18 @@
+beginning_time 1949-08-29T00:00:00.000000Z 
+end_time 1991-12-26T23:59:59.999999Z
+network_id RY
+station_description YAK
+instrument_description SKM3
+network_code RY
+station_code YAK
+location_identifier
+site_name Yakutsk
+latitude 62.0311
+longitude 129.681
+elevation 91
+start_effective_date 1949-08-29T00:00:00.000000Z
+end_effective_date 2020-01-14T23:59:59.000000Z
+sample_rate 100
+RY.YAK.HHN 02/10/1987 1 1.68 0.520 0.370 1.890 0.100 37000
+RY.YAK.HHE 02/10/1987 1 1.68 0.520 0.370 1.890 0.100 37000
+RY.YAK.HHZ 02/10/1987 1 1.68 0.520 0.370 1.890 0.100 36000
