@@ -27,10 +27,25 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20200114"
+__version__ = "20200526"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
+# 20200526 version 1.3.3
+# Include changes made such as the enhanced plot that shows response and phase as a function of frequency and degrees of phase shift
+#
+# 20200513 version 1.3.2
+# In resolving phase, it was determined that SKMcalc function was incorrectly calculating phase
+# and was advancing the phase calculation by 180 degrees. Also, the pole/zero solution
+# is reduced to four poles, four zeros.
+# 20200417 version 1.3.1
+# Export a csv of the original curves that lists the original calculated amplitude/phase data along with the poles/zeros calculated amplitude/phase data
+# so that it can be compared to test waveform data.
+# 20200309 version 1.3
+# Assume the seismogram is a record of velocity, not displacement, and generate the response
+# as appropriate. This is because response removal with version 1.2 leads to a sign reversal
+# in the signal. Also, move the PZcalc algorithm to four poles and zeros, rather than five.
+#
 # 20200114 version 1.2
 # Add the ability to generate dataless SEED files from an enhanced CAL file.
 # This requires an additional supplemental template file to reside in the Pyscripts
@@ -74,9 +89,9 @@ from obspy.io.xseed import Parser
  
 
 class PZcalc(object):
-    '''PZcalc inputs the six published parameters from the Soviet calibration parameter booklet
+    '''PZcalc V1.3 inputs the six published parameters from the Soviet calibration parameter booklet
        and converts these parameters into a response curve plot as well as a best estimate
-       of a five pole/five zero solution for a single channel. It will generate plots that can be saved
+       of a four pole/five zero solution for a single channel. It will generate plots that can be saved
        and included for publication in a station equipment history file. As an option, a text file
        can be specified in cases where a three-channel solution is desired. This is the preferred
        method for most analog stations with multiple channels.
@@ -242,7 +257,7 @@ def freqrange(range):   # range is a value between 1 and 3 where
     #
     Period.append \
         (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.03,0.02,0.01]),axis=None))
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
     #
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
@@ -250,28 +265,6 @@ def freqrange(range):   # range is a value between 1 and 3 where
     for period in Period[range-1]:
         Frequency.append(1./period)
     return(Period[range-1],Frequency)
-
-
-
-
-def minimize(_var,frequencies,response):    # Uses data found in frequencies, and in response. 
-    p1r, p1i, p3r, p4r, p5r,z1r,z2r,z3r, scale_fac = _var
-    new_resp = pazto_freq_resp(
-        freqs=frequencies,
-
-        zeros=np.array([0.0 + 0.0 * 1j,
-                        0.0 + 0.0 * 1j,
-                        z1r + 0.0 * 1j,
-                        z2r + 0.0 * 1j,
-                        z3r + 0.0 * 1j], dtype=np.complex128),                        
-
-        poles=np.array([p1r + p1i * 1j,
-                        p1r - p1i * 1j,
-                        p3r + 0.0 * 1j,
-                        p4r + 0.0 * 1j,
-                        p5r + 0.0 * 1j], dtype=np.complex128),
-        scale_fac=scale_fac)
-    return ((np.abs(new_resp) - np.abs(response)) ** 2).sum()
 
 
 
@@ -388,11 +381,11 @@ def pazto_freq_resp(freqs, zeros, poles, scale_fac):
                     # import list of complex numbers and return the angle between 90 and 270 degrees
 def phasecalc(testresponse):  
     testphase = []
-    for t in testresponse:
-        tp = np.arctan2(t.imag , t.real) * 180. / np.pi
-        if tp > 90.:
+    for i in range(0,len(testresponse)): # ,t in testresponse.enumerate():
+        tp = np.arctan2(testresponse[i].imag , testresponse[i].real) * 180. / np.pi
+        if (testresponse[i].imag > 0) & (testresponse[i].real < 0):
             tp = tp-360.
-        testphase.append(tp - 90.0) # adjust phase to better match what is seen in the real world calibrations
+        testphase.append(tp) # adjust phase to better match what is seen in the real world calibrations
     return(testphase)     
 
 
@@ -401,7 +394,7 @@ def phasecalc(testresponse):
 def phase2degree(phase,period):
     phasedeg = []
     for i in range(0,len(phase)):
-        phasedeg.append(float(phase[i])/float(period[i])*360. - 270.)
+        phasedeg.append(float(phase[i])/float(period[i])*360.) # at 10sec (0.1 hz) it should be (7.5 sec/10sec)*360 = 270 deg
     return(phasedeg)
 
 
@@ -410,7 +403,7 @@ def phase2degree(phase,period):
 def degree2phase(phasedeg,period):
     phasesec = []
     for i in range(0,len(phasedeg)):
-        phasesec.append((float(phasedeg[i]+270.0)/360.0)*float(period[i]))
+        phasesec.append((float(phasedeg[i])/360.0)*float(period[i]))
     return(phasesec)
 
     # Readcal returns a list of channel calibration parameters from a calibration file.
@@ -512,7 +505,7 @@ def generate_dataless(Paz,Metadata):
         # paz[0] = poles
         # paz[1] = zeros
         # paz[2] = scale factor
-        # paz[3] = AO normalization factor
+        # paz[3] = AO normalization factor where Scale factor is multiplied by 2PI * (number of poles - number of zeroes)
         # paz[4] = Vo max sensitivity
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
@@ -555,7 +548,7 @@ def generate_dataless(Paz,Metadata):
 #                                Open the template and modify it with the appropriate information
 #
         
-    p = Parser("C:/reftek/dimas/responses/dataless.pzcalc_template.seed")
+    p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
     blk = p.blockettes
 
     # Basic changes to existing fields necessary to customize the dataless seed file
@@ -589,22 +582,22 @@ def generate_dataless(Paz,Metadata):
         blk[52][i].start_date = blk[50][0].start_effective_date
         blk[52][i].end_date = blk[50][0].end_effective_date
         blk[52][i].sample_rate = samplerate
-        blk[53][i].number_of_complex_poles = 5
+        blk[53][i].number_of_complex_poles = 4
         blk[53][i].real_pole = Real_pole[i]
         blk[53][i].imaginary_pole = Imaginary_pole[i]
-        blk[53][i].real_pole_error = [0, 0, 0, 0, 0]
-        blk[53][i].imaginary_pole_error = [0, 0, 0, 0, 0]
-        blk[53][i].number_of_complex_zeros = 5
+        blk[53][i].real_pole_error = [0, 0, 0, 0]
+        blk[53][i].imaginary_pole_error = [0, 0, 0, 0]
+        blk[53][i].number_of_complex_zeros = 4
         blk[53][i].real_zero = Real_zero[i]
         blk[53][i].imaginary_zero = Imaginary_zero[i]
-        blk[53][i].real_zero_error = [0, 0, 0, 0, 0]
-        blk[53][i].imaginary_zero_error = [0, 0, 0, 0, 0]
+        blk[53][i].real_zero_error = [0, 0, 0, 0]
+        blk[53][i].imaginary_zero_error = [0, 0, 0, 0]
         blk[53][i].A0_normalization_factor = AO_norm[i]
         blk[53][i].normalization_frequency = Norm_freq[i]
         # stage sequence number 1, seismometer gain
         blk[58][i*mult].sensitivity_gain = Vo[i]
-        # stage sequence number 2, digitizer gain
-        blk[58][i*mult+1].sensitivity_gain = 100.0 # This is fixed as 100 cm to 1 m, per PNE2SAC output.
+        # stage sequence number 3, digitizer gain
+        blk[58][i*mult+2].sensitivity_gain = 100.0 # This is fixed as 100 cm to 1 m, per PNE2SAC output.
         # stage sequence number 0, overall sensitivity
         blk[58][(i+1)*mult-1].sensitivity_gain = Vo[i] * 100 # There are 100 centimeters in a meter.
     outfile = os.path.join(os.getcwd(),("dataless."+blk[11][0].station_identifier_code+"_"+ \
@@ -612,6 +605,16 @@ def generate_dataless(Paz,Metadata):
     p.write_seed(outfile)
 
 
+def exportcsv(plotchan,outfil):
+    outfile = outfil+".csv"
+    with open(outfile,mode='a+',newline='') as response:
+        response_writer = csv.writer(response, delimiter=',',quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for channel in plotchan:
+            response_writer.writerow(['Channel: '+channel[0]])
+            response_writer.writerow(['Period','Parameter_gain','PAZ_gain','Parameter_phase','PAZ_phase'])
+            inverted_phasesec=degree2phase(channel[6],channel[2])	
+            for i in range(0,len(channel[2])):
+                response_writer.writerow([channel[2][i],channel[3][i],np.abs(channel[5][i]),channel[4][i],inverted_phasesec[i]])			
 
 
 
@@ -625,7 +628,7 @@ def respplot2(plotchan,outfil):
     # plotchan[][3] = Gain contains the list of gains for all three axes from the published parameters
     # plotchan[][4] = Phase contains the list of phase delays for all three axes as a function of seconds delay from published parameters
     # plotchan[][5] = inverted_resp is the list of gains from the poles and zeros
-    # plotchan[][6] = inverted_phase is the list of phase values in degrees.
+    # plotchan[][6] = inverted_phase is the list of phase values in seconds.
 
     title = "Frequency response and Phase response vs time \n Calculated from published parameters" \
             + "for cal date of "+plotchan[0][1] # use the first channel's date.
@@ -650,13 +653,13 @@ def respplot2(plotchan,outfil):
 #    plt.axis([minimum*0.1,maximum*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
     plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
-        plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5)
-        plt.loglog(plotchan[i][2],np.abs(plotchan[i][5]),color='red',lw=1)
+        plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5) # Base parameter amplitude curve for the channel
+        plt.loglog(plotchan[i][2],np.abs(plotchan[i][5]),color='red',lw=1) # pole/zero estimation amplitude curve for the channel
                 # plot the phase curves and their associated PAZ estimation
     for i in range(0,len(plotchan)):
         inverted_phasesec=degree2phase(plotchan[i][6],plotchan[i][2]) # convert phase from degrees to seconds of delay / period 
-        plt.loglog(plotchan[i][2],plotchan[i][4],color=colorwheel[i],lw=3)
-        plt.loglog(plotchan[i][2],inverted_phasesec,color='red',lw=1)
+        plt.loglog(plotchan[i][2],plotchan[i][4],color=colorwheel[i],lw=3) # base parameter phase for the channel
+        plt.loglog(plotchan[i][2],inverted_phasesec,color='red',lw=1) # pole/zero estimation of phase for the channel
                 # plot the axes
     plt.xlabel('Period [Seconds]')
     plt.ylabel('Amplitude (microns/mm)')
@@ -671,9 +674,87 @@ def respplot2(plotchan,outfil):
     plt.suptitle(title) 
 
     plt.savefig(outfil+".png")
+
     plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
+    exportcsv(plotchan,outfil)  # Export the parameters as a csv file for additional analysis
+
+                    # Plot the channel response curve along with the PAZ estimation, then save the plot to disk.
+def respplot1(plotchan,outfil):
+
+    # plotchan contains a list for each channel to be plotted where each item consists of:
+    # plotchan[][0] = Component: The channel name.
+    # plotchan[][1] = Calibration date for the channel
+    # plotchan[][2] = Period is the list of periods upon which all calculations are based
+    # plotchan[][3] = Gain contains the list of gains for all three axes from the published parameters
+    # plotchan[][4] = Phase contains the list of phase delays for all three axes as a function of seconds delay from published parameters
+    # plotchan[][5] = inverted_resp is the list of gains from the poles and zeros
+    # plotchan[][6] = inverted_phase is the list of phase values in degrees. from poles and zeros
 
 
+    title = "Frequency response and Phase response vs time \n Calculated from published parameters" \
+            + "for cal date of "+plotchan[0][1] # use the first channel's date.
+    colorwheel = ['blue','orange','green','red','cyan','magenta', \
+                  'blue','orange','green','red','cyan','magenta', \
+                  'blue','orange','green','red','cyan','magenta', \
+                  'blue','orange','green','red','cyan','magenta'  ]
+
+
+                # Determine the min/max x axis scale to fit the frequency band.
+    maxfreq=0
+    minfreq=1.0E+6 # version 1 had conflict with variables named 'max' and 'min'
+    for p in plotchan:
+        if (np.amax(p[2]) > maxfreq):
+            maxfreq = 1/np.amin(p[2]) # maximum frequency based on the period in p
+        if (np.amin(p[2]) < minfreq):
+            minfreq = 1/np.amax(p[2]) # minimum frequency
+
+    print(f'Minimum frequency = {minfreq} Hz and maximum frequency = {maxfreq}')
+    plt.figure()
+    plt.subplot(211)
+    plt.axis([minfreq*0.5,maxfreq*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
+#    plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
+    for i in range (0,len(plotchan)):
+        Freq = [1./ float(plotchan[i][2][j]) for j in range(len(plotchan[i][2]))]        
+        plt.loglog(Freq,plotchan[i][3],color=colorwheel[i],lw=5)
+        plt.loglog(Freq,np.abs(plotchan[i][5]),color=colorwheel[i],lw=1)
+                # plot the phase curves and their associated PAZ estimation
+
+                # plot the axes
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Amplitude (microns/mm)')
+#      Don't annotate the record with channel names if there's more than six channels. Its too busy.
+    XY = [[[0.02,100],[0.02,60.0],[0.02,35],[0.02,600],[0.02,350.0],[0.02,200]], \
+          [[0.015,0.4],[0.22,0.4],[3.0,0.4],[0.015,0.4],[0.22,0.4],[3.0,0.4]]]
+    if len(plotchan)<7:
+        for i in range(0,len(plotchan)):
+            plt.annotate(plotchan[i][0] + " amp",         xy=XY[0][i],xytext=XY[0][i], color = colorwheel[i])
+    plt.grid(True, which="both")
+
+    plt.subplot(212)
+    plt.axis([minfreq*0.5,maxfreq*2,-270,180]) # scale the plot between 0.1 and 100K magnification
+    for i in range(0,len(plotchan)):
+        Freq = [1./ float(plotchan[i][2][j]) for j in range(len(plotchan[i][2]))]
+        channelphasedeg = phase2degree(plotchan[i][4],plotchan[i][2])  # phase, period
+        plt.semilogx(Freq,channelphasedeg,color=colorwheel[i],lw=3) # frequency vs phase in seconds?
+        plt.semilogx(Freq,plotchan[i][6],color=colorwheel[i],lw=1)
+    plt.title = "Phase Response of SKM"
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Phase(degrees)')
+    plt.text(maxfreq*2.6, 0.1, 'Phase (degrees)', fontsize=11,
+                   rotation=90.0, rotation_mode='anchor')
+    plt.suptitle(title)
+
+    XY = [[[0.02,-270],[0.02,-200],[0.02,0],[0.02,45],[0.02,90],[0.02,125]], \
+          [[0.015,0.4],[0.22,0.4],[3.0,0.4],[0.015,0.4],[0.22,0.4],[3.0,0.4]]]    
+    if len(plotchan) < 7:
+        for i in range(0,len(plotchan)):
+            plt.annotate(plotchan[i][0]+" phase",xy=XY[1][i],xytext=XY[1][i], color = colorwheel[i])
+    plt.annotate("Inverted parameters from calculated poles & Zeros",xy=(minfreq*0.2,0.125),xytext=(minfreq*0.2,0.125),color='red')
+    plt.suptitle(title) 
+
+    plt.savefig(outfil+".png")
+    exportcsv(plotchan,outfil)  # Export the parameters as a csv file for additional analysis
+    plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
 
 
 
@@ -703,20 +784,44 @@ def SKMcalc(Periods,Ts,Ds,Tg,Dg,S2,Vo):
     gr=np.arctan(abs(np.array(A1)/np.array(B1))) *180./np.pi # gr is phase angle
     gi = []  
     for i in range(0,len(A1)):
+
         if   (A1[i] > 0) & (B1[i] > 0): # If point lies in quadrant 1
-            gi.append(gr[i] )
+            gi.append(-180 + gr[i] )
         elif (A1[i] < 0) & (B1[i] > 0): # If point lies in quadrant 2
-            gi.append(-gr[i])
+            gi.append(-180. -gr[i])
         elif (A1[i] < 0) & (B1[i] < 0): # if point lies in quadrant 3
-            gi.append(180. + gr[i])
+            gi.append(gr[i])
         elif (A1[i] > 0) & (B1[i] < 0): # if point lies in quadrant 4
-            gi.append(180 - gr[i])            
+            gi.append(-gr[i])            
 
     phase = [] # phase delay (in seconds)
     for i in range(0,len(T6)):
         phase.append(gi[i]*T6[i]/360.)
                     
     return(V6,phase) # return gain (V6) and phase delay in seconds.
+
+
+
+def minimize(_var,frequencies,response):    # Uses data found in frequencies, and in response. 
+#    p1r, p1i, p3r, p4r, p5r,z1r,z2r,z3r, scale_fac = _var
+    p1r, p1i, p3r, p4r,z1r,z2r, scale_fac = _var
+    new_resp = pazto_freq_resp(
+        freqs=frequencies,
+
+#                          Four poles and four zeros
+        zeros=np.array([0.0 + 0.0 * 1j,
+                        0.0 + 0.0 * 1j,
+                        z1r + 0.0 * 1j,
+                        z2r + 0.0 * 1j], dtype=np.complex128),
+                        
+
+        poles=np.array([p1r + p1i * 1j,
+                        p1r - p1i * 1j,
+                        p3r + 0.0 * 1j,
+                        p4r + 0.0 * 1j], dtype=np.complex128),
+
+        scale_fac=scale_fac)
+    return ((np.abs(new_resp) - np.abs(response)) ** 2).sum()
 
 
 
@@ -735,34 +840,36 @@ def processchannel(channel):
     np.seterr(divide='ignore')
     for z in range(0,128): # iterate 128 times to find the solution that best describes the phase response.
         initial_x=[]
-        X0=np.random.random(9)
+        eps_step = 1e-6
+        max_iteration = 1e10
+        X0=np.random.random(7)            # 7 elements for use with 4 poles & zeros solution
         #                                Using the minimize function, find the poles & zeros solution that best describes
         #                                the instrument response as found in responses, on frequencies breakpoint "frequencies"
+
         out = scipy.optimize.minimize(
             fun=minimize,
             args = (frequencies,response), # An important detail that cost me three weeks to discover.  
             method="BFGS",
             x0=X0,
-            options={"eps": 1e-10, "maxiter": 1e8}) # defines the step size for the random tests, I think
+            options={"eps": eps_step, "maxiter": max_iteration}) # Experimental, reduce step size as code converges.
         x = out.x
         new_poles = np.array([-abs(x[0]) + abs(x[1]) * 1j,
                               -abs(x[0]) - abs(x[1]) * 1j,
                               -abs(x[2]) + 0.0 * 1j,
-                              -abs(x[3]) + 0.0 * 1j,
-                              -abs(x[4]) + 0.0 * 1j], 
+                              -abs(x[3]) + 0.0 * 1j], 
                               dtype=np.complex128)    
 
      
         new_zeros = np.array([ 0.0 + 0.0 * 1j,
                                0.0 + 0.0 * 1j,
-                              x[5] + 0.0 * 1j,
-                              x[6] + 0.0 * 1j,
-                              x[7] + 0.0 * 1j], dtype=np.complex128)
-        new_scale_fac = x[8]
+                              x[4] + 0.0 * 1j,
+                              x[5] + 0.0 * 1j], dtype=np.complex128)
+        new_scale_fac = x[6]
         #              Create the response curve that results from this theoretical new poles and zeroes solution
         inverted_response = pazto_freq_resp(freqs=frequencies, zeros=new_zeros, poles=new_poles,scale_fac=new_scale_fac)    
         inphase = phasecalc(inverted_response)                        # phase from inverted response, listed in degrees
         curvefit = np.sqrt(((np.array(Phasedeg) - np.array(inphase))**2).mean()) # This is the rmse function for misfit
+ 
         if (curvefit) < evaluation:
             final_iteration = z
             best_poles=new_poles
@@ -770,7 +877,7 @@ def processchannel(channel):
             best_scale_fac=new_scale_fac
             print(f'\nIteration # {z}: Phase misfit reduced to {curvefit:0.3f}')
             evaluation = curvefit
-            if evaluation < 5.0:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
+            if evaluation < 5:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
                 break               # Less than 5 is Good enough. End the loop early to speed up the process.
         else:
             sys.stdout.write('.')
@@ -899,7 +1006,8 @@ def main():
             if seed:   # Generate a dataless seed file 
                 generate_dataless(Paz,Metadata)
 
-            respplot2(Plotchan,(outfil+"_response"))           
+            respplot2(Plotchan,(outfil+"_response_period"))
+            respplot1(Plotchan,(outfil+"_response"))           
 
     elif chanprocess:
         Metadata = []  # Initialize, because it isnt used but is passed to pazsave
@@ -913,7 +1021,7 @@ def main():
         print(f"Evaluated misfit of phase = {paz[6]:0.3f} \n")
         outfil = os.path.join(os.getcwd(),(channel[0]+"_"+channel[1]))
         pazsave((outfil+"_paz.txt"),Paz,Metadata,seed)
-        respplot2(Plotchan,(outfil+"_response"))
+        respplot2(Plotchan,(outfil+"_response_period"))
 
     else:
         print('\nNo files processed. No channels processed.')
