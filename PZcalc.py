@@ -32,6 +32,7 @@ __version__ = "20200526"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
+# 20200601 Same version as 20200526 but problems commiting to GITHUB occurred so a second commit seemed necessary
 # 20200526 version 1.3.3
 # Include changes made such as the enhanced plot that shows response and phase as a function of frequency and degrees of phase shift
 #
