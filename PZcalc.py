@@ -27,12 +27,15 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-<<<<<<< HEAD
-__version__ = "20200526"
+__version__ = "20200702"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
-# 20200601 Same version as 20200526 but problems commiting to GITHUB occurred so a second commit seemed necessary
+# 20200702 version 1.4
+# Major revision on how the poles and zeros are calculated.
+# Implement suggestion from John Nablek to find a direct three zero, four pole solution.
+# Correct the AO normalization factor and the calculation of phase for the plot function.
+# 
 # 20200526 version 1.3.3
 # Include changes made such as the enhanced plot that shows response and phase as a function of frequency and degrees of phase shift
 #
@@ -48,12 +51,6 @@ __license__ = "MIT"
 # as appropriate. This is because response removal with version 1.2 leads to a sign reversal
 # in the signal. Also, move the PZcalc algorithm to four poles and zeros, rather than five.
 #
-=======
-__version__ = "20200114"
-__license__ = "MIT"
-
-# -*- coding: utf-8 -*-
->>>>>>> origin/master
 # 20200114 version 1.2
 # Add the ability to generate dataless SEED files from an enhanced CAL file.
 # This requires an additional supplemental template file to reside in the Pyscripts
@@ -217,83 +214,6 @@ class PZcalc(object):
         
        '''
 
-
-
-def get_dataless_block(metadata):
-    #                               preload the dataless seed fields from the calibration
-    p = Parser("C:/Pyscripts/dataless.pzcalc_template.seed")
-    blk = p.blockettes
-
-    #                               Basic changes to existing fields necessary to customize the dataless seed file
-
-    blk[10][0].beginning_time = metadata['beginning_time'] 
-    blk[10][0].end_time = metadata['end_time']                  # These appear to be unused within pdcc
-    blk[11][0].station_identifier_code = metadata['network_id'] # This is overritten by blk[50].network_code
-    blk[33][0].abbreviation_description = metadata['station_description']
-    blk[33][1].abbreviation_description = metadata['instrument_description']
-    # metadata['location_identifier']
-    blk[50][0].network_code = metadata['network_code']
-    blk[50][0].station_call_letters = metadata['station_code']
-    blk[50][0].site_name = metadata['site_name']
-    blk[50][0].latitude = metadata['latitude']
-    blk[50][0].longitude = metadata['longitude']
-    blk[50][0].elevation = metadata['elevation']
-    blk[50][0].start_effective_date = UTCDateTime(metadata['start_effective_date'])
-    blk[50][0].end_effective_date = metadata['end_effective_date']
-    return(blk)
-
-
-def calfiles(infolder):
-    filelist = []
-    for file in os.listdir(sys.argv[2]):
-        if '.cal' in file.lower():
-            filelist.append(os.path.join(sys.argv[2].replace("/","\\"),file)) 
-    return(filelist)
-
-
-
-
-def freqrange(range):   # range is a value between 1 and 3 where
-                        # 1  = 0.125 to 30 seconds (medium-long period i.e. SKD)
-                        # 2 = 0.067 to 20 seconds  (short period, i.e. SKM,SM3,S1P)
-                        # 3 = 0.005 to 10 seconds  (very short period, i.e. geophone)
-    Period = []
-    Frequency = []
-    Period.append \
-        (np.concatenate((np.arange(30.0,5.0,-5.0),np.arange(9.0,2.5,-1.5), \
-         np.arange(2.5,1.0,-0.1),[0.75,0.666,0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04]),axis=None))
-    #
-    Period.append \
-        (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-<<<<<<< HEAD
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
-=======
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.03,0.02,0.01]),axis=None))
->>>>>>> origin/master
-    #
-    Period.append \
-        (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
-         np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.01,0.005]),axis=None))
-    for period in Period[range-1]:
-        Frequency.append(1./period)
-    return(Period[range-1],Frequency)
-
-
-
-
-def misfit(a,b):    # Bring in two lists, compare them, 
-                    # and present a scalar representing a ratio of how well they fit.
-                    # a and b should be the same length.
-    d = []
-    n = []
-    for i in range(0,len(a)):
-        n.append((np.abs(a[i]-b[i]))) # Check the difference between the two values
-        d.append((np.abs(a[i]+b[i])))
-    misfit = np.sum(n)/np.sum(d)
-    return(misfit)
-
-
-
 def options():      # Get command line options and process them
     fileprocess = False
     chanprocess = False
@@ -378,78 +298,30 @@ def options():      # Get command line options and process them
     return(fileprocess,filelist,chanprocess,channel,seed)
 
 
-    
-                    # PAZ subroutine that uses the same frequencies as derived from original curve
-def pazto_freq_resp(freqs, zeros, poles, scale_fac): 
-    b, a = scipy.signal.ltisys.zpk2tf(zeros, poles, scale_fac)
-    if not isinstance(a, np.ndarray) and a == 1.0:
-        a = [1.0]
-    return scipy.signal.freqs(b, a, freqs * 2 * np.pi)[1] 
-            # list element 0 is frequencies
-            # list element 1 is the complex amplitudes
 
 
-
-                    # import list of complex numbers and return the angle between 90 and 270 degrees
-def phasecalc(testresponse):  
-    testphase = []
-    for i in range(0,len(testresponse)): # ,t in testresponse.enumerate():
-        tp = np.arctan2(testresponse[i].imag , testresponse[i].real) * 180. / np.pi
-        if (testresponse[i].imag > 0) & (testresponse[i].real < 0):
-            tp = tp-360.
-        testphase.append(tp) # adjust phase to better match what is seen in the real world calibrations
-    return(testphase)     
-
-
-
-                    # Convert phase lag from seconds per period into degrees. 
-def phase2degree(phase,period):
-    phasedeg = []
-    for i in range(0,len(phase)):
-        phasedeg.append(float(phase[i])/float(period[i])*360.) # at 10sec (0.1 hz) it should be (7.5 sec/10sec)*360 = 270 deg
-    return(phasedeg)
-
-
-
-                    # Convert phase lag from degrees into seconds/period
-def degree2phase(phasedeg,period):
-    phasesec = []
-    for i in range(0,len(phasedeg)):
-        phasesec.append((float(phasedeg[i])/360.0)*float(period[i]))
-    return(phasesec)
-
-    # Readcal returns a list of channel calibration parameters from a calibration file.
-    # Depending on if a dataless seed is to be generated or not.
-
-def readcal(infile,seed):
-    if seed == True:
-        Metadata,Channel = dataless_load(infile)  # seed is enabled so attempt to open the enhanced cal
-    else:
-        Metadata,Channel = load(infile) # open the normal cal
-    return(Metadata,Channel)
+def get_dataless_block(metadata):
+    #                               preload the dataless seed fields from the calibration
+    p = Parser("C:/Pyscripts/dataless.pzcalc_template.seed")
+    blk = p.blockettes
+    #                               Basic changes to existing fields necessary to customize the dataless seed file
+    blk[10][0].beginning_time = metadata['beginning_time'] 
+    blk[10][0].end_time = metadata['end_time']                  # These appear to be unused within pdcc
+    blk[11][0].station_identifier_code = metadata['network_id'] # This is overritten by blk[50].network_code
+    blk[33][0].abbreviation_description = metadata['station_description']
+    blk[33][1].abbreviation_description = metadata['instrument_description']
+    # metadata['location_identifier']
+    blk[50][0].network_code = metadata['network_code']
+    blk[50][0].station_call_letters = metadata['station_code']
+    blk[50][0].site_name = metadata['site_name']
+    blk[50][0].latitude = metadata['latitude']
+    blk[50][0].longitude = metadata['longitude']
+    blk[50][0].elevation = metadata['elevation']
+    blk[50][0].start_effective_date = UTCDateTime(metadata['start_effective_date'])
+    blk[50][0].end_effective_date = metadata['end_effective_date']
+    return(blk)
 
 
-
-def load(infile):                        # Read a simple cal file without metadata
-    with open(infile,'r') as fin:
-        list = csv.reader(fin)
-        Channel = []
-        Metadata = [] # This list is returned empty
-        for row in list:
-            if row:
-                channel= []
-                c = row[0].split()
-                channel.append(c[0])                    # Component
-                channel.append(c[1].replace("/","_"))   # CalDate
-                channel.append(int(c[2]))               # Range 
-                channel.append(float(c[3]))             # Ts  
-                channel.append(float(c[4]))             # Ds  
-                channel.append(float(c[5]))             # Tg  
-                channel.append(float(c[6]))             # Dg  
-                channel.append(float(c[7]))             # S2  
-                channel.append(float(c[8]))             # Vm  
-            Channel.append(channel)
-    return(Metadata,Channel)
 
 #
 #                                        Load the metadata-enabled calibration file
@@ -517,17 +389,12 @@ def generate_dataless(Paz,Metadata):
         # paz[0] = poles
         # paz[1] = zeros
         # paz[2] = scale factor
-<<<<<<< HEAD
         # paz[3] = AO normalization factor where Scale factor is multiplied by 2PI * (number of poles - number of zeroes)
-=======
-        # paz[3] = AO normalization factor
->>>>>>> origin/master
         # paz[4] = Vo max sensitivity
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
         # paz[7] = component name        # paz = poles and zeros.
         # paz[8] = calibration date
-        
     Channel = []
     Caldate = []
     Real_pole = []      # Poles.real
@@ -537,7 +404,6 @@ def generate_dataless(Paz,Metadata):
     AO_norm = []        # Normalization factor
     Norm_freq = []      # Normalization frequency at which point max sensitivity is reached & normalized gain = 1 
     Vo = []             # Max sensitivity (peak amplification factor between ground motion and its deflection on paper)
-
     for  paz in Paz: # There should be three channels
         pole_real = []
         pole_imag = []
@@ -553,31 +419,20 @@ def generate_dataless(Paz,Metadata):
         Imaginary_pole.append(pole_imag)
         Real_zero.append(zero_real)
         Imaginary_zero.append(zero_imag)
-
         AO_norm.append(paz[3])
         Vo.append(paz[4])
         Norm_freq.append(paz[5])
         Channel.append(paz[7][paz[7].rfind('.')+1:]) # Take last section to determine the channel name
         Caldate.append(paz[8])
- 
-#
-#                                Open the template and modify it with the appropriate information
-#
-        
-<<<<<<< HEAD
+    #
+    #                                Open the template and modify it with the appropriate information
+    #  
     p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
-=======
-    p = Parser("C:/reftek/dimas/responses/dataless.pzcalc_template.seed")
->>>>>>> origin/master
     blk = p.blockettes
-
     # Basic changes to existing fields necessary to customize the dataless seed file
-
     blk[10][0].beginning_time = Metadata['beginning_time'] 
     blk[10][0].end_time = Metadata['end_time']                  # These appear to be unused within pdcc
-
     blk[11][0].station_identifier_code = Metadata['network_id'] # is not necessary as it is overridden by blk[50].network_code
-
     blk[33][0].abbreviation_description = Metadata['station_description']
     blk[33][1].abbreviation_description = Metadata['instrument_description']
     blk[50][0].network_code = Metadata['network_code']
@@ -592,7 +447,6 @@ def generate_dataless(Paz,Metadata):
     mult = int(len(blk[58])/3) # Assume that the length of the block is due to there being three channels.
     for i in range(0,len(blk[52])):
         blk[52][i].sample_rate = samplerate
-    
     for i, cha in enumerate(Channel):
         blk[52][i].channel_identifier = cha #'HH%s' % cha
         blk[52][i].location_identifier = Metadata['location_identifier']
@@ -602,29 +456,16 @@ def generate_dataless(Paz,Metadata):
         blk[52][i].start_date = blk[50][0].start_effective_date
         blk[52][i].end_date = blk[50][0].end_effective_date
         blk[52][i].sample_rate = samplerate
-<<<<<<< HEAD
         blk[53][i].number_of_complex_poles = 4
         blk[53][i].real_pole = Real_pole[i]
         blk[53][i].imaginary_pole = Imaginary_pole[i]
         blk[53][i].real_pole_error = [0, 0, 0, 0]
         blk[53][i].imaginary_pole_error = [0, 0, 0, 0]
-        blk[53][i].number_of_complex_zeros = 4
+        blk[53][i].number_of_complex_zeros = 3
         blk[53][i].real_zero = Real_zero[i]
         blk[53][i].imaginary_zero = Imaginary_zero[i]
-        blk[53][i].real_zero_error = [0, 0, 0, 0]
-        blk[53][i].imaginary_zero_error = [0, 0, 0, 0]
-=======
-        blk[53][i].number_of_complex_poles = 5
-        blk[53][i].real_pole = Real_pole[i]
-        blk[53][i].imaginary_pole = Imaginary_pole[i]
-        blk[53][i].real_pole_error = [0, 0, 0, 0, 0]
-        blk[53][i].imaginary_pole_error = [0, 0, 0, 0, 0]
-        blk[53][i].number_of_complex_zeros = 5
-        blk[53][i].real_zero = Real_zero[i]
-        blk[53][i].imaginary_zero = Imaginary_zero[i]
-        blk[53][i].real_zero_error = [0, 0, 0, 0, 0]
-        blk[53][i].imaginary_zero_error = [0, 0, 0, 0, 0]
->>>>>>> origin/master
+        blk[53][i].real_zero_error = [0, 0, 0]
+        blk[53][i].imaginary_zero_error = [0, 0,0]
         blk[53][i].A0_normalization_factor = AO_norm[i]
         blk[53][i].normalization_frequency = Norm_freq[i]
         # stage sequence number 1, seismometer gain
@@ -638,25 +479,110 @@ def generate_dataless(Paz,Metadata):
     p.write_seed(outfile)
 
 
-<<<<<<< HEAD
-def exportcsv(plotchan,outfil):
+
+
+
+def calfiles(infolder):
+    filelist = []
+    for file in os.listdir(sys.argv[2]):
+        if '.cal' in file.lower():
+            filelist.append(os.path.join(sys.argv[2].replace("/","\\"),file)) 
+    return(filelist)
+
+
+
+
+def load(infile):                        # Read a simple cal file without metadata
+    with open(infile,'r') as fin:
+        list = csv.reader(fin)
+        Channel = []
+        Metadata = [] # This list is returned empty
+        for row in list:
+            if row:
+                channel= []
+                c = row[0].split()
+                channel.append(c[0])                    # Component
+                channel.append(c[1].replace("/","_"))   # CalDate
+                channel.append(int(c[2]))               # Range 
+                channel.append(float(c[3]))             # Ts  
+                channel.append(float(c[4]))             # Ds  
+                channel.append(float(c[5]))             # Tg  
+                channel.append(float(c[6]))             # Dg  
+                channel.append(float(c[7]))             # S2  
+                channel.append(float(c[8]))             # Vm  
+            Channel.append(channel)
+    return(Metadata,Channel)
+
+
+
+
+
+def readcal(infile,seed):
+    if seed == True:
+        Metadata,Channel = dataless_load(infile)  # seed is enabled so attempt to open the enhanced cal
+    else:
+        Metadata,Channel = load(infile) # open the normal cal
+    return(Metadata,Channel)
+
+
+
+
+
+
+def exportcsv(plotchan,paz,outfil): # Export the gain and phase curves
+    # Parse out the AO correction factor and sensitivity from the paz
     outfile = outfil+".csv"
+    AO_sense = []              # Parse out the AO correction factor and sensitivity from paz
+    for i in range(0,len(paz)):
+        AO_sense.append([paz[i][3],paz[i][4]])
+                               # Write out a normalized curve
     with open(outfile,mode='a+',newline='') as response:
         response_writer = csv.writer(response, delimiter=',',quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        for channel in plotchan:
-            response_writer.writerow(['Channel: '+channel[0]])
-            response_writer.writerow(['Period','Parameter_gain','PAZ_gain','Parameter_phase','PAZ_phase'])
-            inverted_phasesec=degree2phase(channel[6],channel[2])	
-            for i in range(0,len(channel[2])):
-                response_writer.writerow([channel[2][i],channel[3][i],np.abs(channel[5][i]),channel[4][i],inverted_phasesec[i]])			
-=======
->>>>>>> origin/master
+        for j,channel in enumerate(plotchan):
+            response_writer.writerow(['Channel:              ',channel[0]])
+            response_writer.writerow(['AO Correction factor: ',AO_sense[j][0]])
+            response_writer.writerow(['Channel sensitivity:  ',AO_sense[j][1]])
+            response_writer.writerow(['Frequency (Hz)','PAZ_gain(normalized)','PAZ_phase(degrees)'])	
+            for i in range(0,len(channel[2])): # Report the normalized gain by dividing list by max sensitivity
+                response_writer.writerow([1/channel[2][i],np.abs(channel[5][i])/AO_sense[j][1],channel[6][i]])			
+
+
+
+
+
+def freqrange(range):   # range is a value between 1 and 3 where
+                        # 1  = 0.05 to 30 seconds ( 0.03 - 20Hz) (medium-long period i.e. SKD)
+                        # 2 = 0.067 to 20 seconds  (short period, i.e. SKM,SM3,S1P)
+                        # 3 = 0.005 to 10 seconds  (very short period, i.e. geophone)
+                        # 4 = experimental where ts = 12.5 ds = 1.2
+    ts = 1.7
+    ds = 0.42
+    Period = []
+    Frequency = []
+    Period.append \
+        (np.concatenate((np.arange(30.0,2.5,-1.0),np.arange(2.5,1.1,-0.1), \
+         np.arange(1.1,0.025,-0.05)),axis=None))
+    #
+    Period.append \
+        (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
+    #
+    Period.append \
+        (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
+         np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.01,0.005]),axis=None))
+    #
+    Period.append \
+        (np.concatenate(([8*ts,4*ts,2*ts,1.5*ts,1.3*ts,1.1*ts,1.05*ts,ts,0.95*ts,0.9*ts,0.8*ts,0.7*ts,0.5*ts,0.25*ts,0.125*ts,0.1*ts], \
+         [1.1*ds,1.05*ds,ds,0.95*ds,0.9*ds,0.8*ds,0.7*ds,0.5*ds,0.25*ds,0.125*ds,0.1*ds,0.05*ds]),axis=None))
+
+    for period in Period[range-1]:
+        Frequency.append(1./period)
+    return(Period[range-1],Frequency)
 
 
 
                     # Plot the channel response curve along with the PAZ estimation, then save the plot to disk.
 def respplot2(plotchan,outfil):
-
     # plotchan contains a list for each channel to be plotted where each item consists of:
     # plotchan[][0] = Component: The channel name.
     # plotchan[][1] = Calibration date for the channel
@@ -665,17 +591,15 @@ def respplot2(plotchan,outfil):
     # plotchan[][4] = Phase contains the list of phase delays for all three axes as a function of seconds delay from published parameters
     # plotchan[][5] = inverted_resp is the list of gains from the poles and zeros
     # plotchan[][6] = inverted_phase is the list of phase values in seconds.
-
     title = "Frequency response and Phase response vs time \n Calculated from published parameters" \
             + "for cal date of "+plotchan[0][1] # use the first channel's date.
     colorwheel = ['blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta'  ]
-#      Don't annotate the record with channel names if there's more than six channels. Its too busy.
+    #      Don't annotate the record with channel names if there's more than six channels. Its too busy.
     XY = [[[0.02,100],[0.02,60.0],[0.02,35],[0.02,600],[0.02,350.0],[0.02,200]], \
           [[0.015,0.4],[0.22,0.4],[3.0,0.4],[0.015,0.4],[0.22,0.4],[3.0,0.4]]]
-
                 # Determine the min/max x axis scale to fit the frequency band.
     maximum=0
     minimum=1.0E+6 # version 1 had conflict with variables named 'max' and 'min'
@@ -684,9 +608,7 @@ def respplot2(plotchan,outfil):
             maximum = np.amax(p[2])
         if (np.amin(p[2]) < minimum):
             minimum = np.amin(p[2])
-
     plt.figure()
-#    plt.axis([minimum*0.1,maximum*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
     plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
         plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5) # Base parameter amplitude curve for the channel
@@ -708,19 +630,16 @@ def respplot2(plotchan,outfil):
             plt.annotate(plotchan[i][0]+" phase",xy=XY[1][i],xytext=XY[1][i], color = colorwheel[i])
     plt.annotate("Inverted parameters from calculated poles & Zeros",xy=(minimum*0.2,0.125),xytext=(minimum*0.2,0.125),color='red')
     plt.suptitle(title) 
-
     plt.savefig(outfil+".png")
-<<<<<<< HEAD
-=======
     plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
->>>>>>> origin/master
 
-    plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
-    exportcsv(plotchan,outfil)  # Export the parameters as a csv file for additional analysis
+
+
+
+
 
                     # Plot the channel response curve along with the PAZ estimation, then save the plot to disk.
 def respplot1(plotchan,outfil):
-
     # plotchan contains a list for each channel to be plotted where each item consists of:
     # plotchan[][0] = Component: The channel name.
     # plotchan[][1] = Calibration date for the channel
@@ -729,16 +648,12 @@ def respplot1(plotchan,outfil):
     # plotchan[][4] = Phase contains the list of phase delays for all three axes as a function of seconds delay from published parameters
     # plotchan[][5] = inverted_resp is the list of gains from the poles and zeros
     # plotchan[][6] = inverted_phase is the list of phase values in degrees. from poles and zeros
-
-
     title = "Frequency response and Phase response vs time \n Calculated from published parameters" \
             + "for cal date of "+plotchan[0][1] # use the first channel's date.
     colorwheel = ['blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta', \
                   'blue','orange','green','red','cyan','magenta'  ]
-
-
                 # Determine the min/max x axis scale to fit the frequency band.
     maxfreq=0
     minfreq=1.0E+6 # version 1 had conflict with variables named 'max' and 'min'
@@ -747,7 +662,6 @@ def respplot1(plotchan,outfil):
             maxfreq = 1/np.amin(p[2]) # maximum frequency based on the period in p
         if (np.amin(p[2]) < minfreq):
             minfreq = 1/np.amax(p[2]) # minimum frequency
-
     print(f'Minimum frequency = {minfreq} Hz and maximum frequency = {maxfreq}')
     plt.figure()
     plt.subplot(211)
@@ -758,7 +672,6 @@ def respplot1(plotchan,outfil):
         plt.loglog(Freq,plotchan[i][3],color=colorwheel[i],lw=5)
         plt.loglog(Freq,np.abs(plotchan[i][5]),color=colorwheel[i],lw=1)
                 # plot the phase curves and their associated PAZ estimation
-
                 # plot the axes
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Amplitude (microns/mm)')
@@ -769,9 +682,8 @@ def respplot1(plotchan,outfil):
         for i in range(0,len(plotchan)):
             plt.annotate(plotchan[i][0] + " amp",         xy=XY[0][i],xytext=XY[0][i], color = colorwheel[i])
     plt.grid(True, which="both")
-
     plt.subplot(212)
-    plt.axis([minfreq*0.5,maxfreq*2,-270,180]) # scale the plot between 0.1 and 100K magnification
+    plt.axis([minfreq*0.5,maxfreq*2,-100,300]) # scale the plot between 0.1 and 100K magnification
     for i in range(0,len(plotchan)):
         Freq = [1./ float(plotchan[i][2][j]) for j in range(len(plotchan[i][2]))]
         channelphasedeg = phase2degree(plotchan[i][4],plotchan[i][2])  # phase, period
@@ -783,7 +695,6 @@ def respplot1(plotchan,outfil):
     plt.text(maxfreq*2.6, 0.1, 'Phase (degrees)', fontsize=11,
                    rotation=90.0, rotation_mode='anchor')
     plt.suptitle(title)
-
     XY = [[[0.02,-270],[0.02,-200],[0.02,0],[0.02,45],[0.02,90],[0.02,125]], \
           [[0.015,0.4],[0.22,0.4],[3.0,0.4],[0.015,0.4],[0.22,0.4],[3.0,0.4]]]    
     if len(plotchan) < 7:
@@ -791,11 +702,46 @@ def respplot1(plotchan,outfil):
             plt.annotate(plotchan[i][0]+" phase",xy=XY[1][i],xytext=XY[1][i], color = colorwheel[i])
     plt.annotate("Inverted parameters from calculated poles & Zeros",xy=(minfreq*0.2,0.125),xytext=(minfreq*0.2,0.125),color='red')
     plt.suptitle(title) 
-
     plt.savefig(outfil+".png")
-    exportcsv(plotchan,outfil)  # Export the parameters as a csv file for additional analysis
+
     plt.show()                  # Turn this on if you want to open the plot for viewing, panning and zooming. Otherwise its safe to comment it out 
 
+
+
+                    # PAZ subroutine that uses the same frequencies as derived from original curve
+def pazto_freq_resp(freqs, zeros, poles, scale_fac): 
+    b, a = scipy.signal.ltisys.zpk2tf(zeros, poles, scale_fac)
+    if not isinstance(a, np.ndarray) and a == 1.0:
+        a = [1.0]
+    return scipy.signal.freqs(b, a, freqs * 2 * np.pi)[1] 
+            # list element 0 is frequencies
+            # list element 1 is the complex amplitudes
+
+
+                    # import list of complex numbers and return the angle between 270 and -90 degrees
+def phasecalc(testresponse):
+    testphase = []
+    for i in range(0,len(testresponse)): # ,t in testresponse.enumerate():
+        tp = np.arctan2(testresponse[i].imag , testresponse[i].real) * 180. / np.pi
+        if (testresponse[i].real < 0) & (testresponse[i].imag < 0): # if point lies in quadrant 3
+            testphase.append(360. + tp)
+        else:
+            testphase.append(tp)
+    return(testphase)
+
+                    # Convert phase lag from seconds per period into degrees. 
+def phase2degree(phase,period):
+    phasedeg = []
+    for i in range(0,len(phase)):
+        phasedeg.append(float(phase[i])/float(period[i])*360.) # at 10sec (0.1 hz) it should be (7.5 sec/10sec)*360 = 270 deg
+    return(phasedeg)
+
+                    # Convert phase lag from degrees into seconds/period
+def degree2phase(phasedeg,period):
+    phasesec = []
+    for i in range(0,len(phasedeg)):
+        phasesec.append((float(phasedeg[i])/360.0)*float(period[i]))
+    return(phasesec)
 
 
     # SKMcalc yields a response curve based on the published parameters of an analog seismic station channel.
@@ -823,16 +769,16 @@ def SKMcalc(Periods,Ts,Ds,Tg,Dg,S2,Vo):
     B1=-(q*np.array(T6)**2-m)*np.array(T6)        # Y axis
     gr=np.arctan(abs(np.array(A1)/np.array(B1))) *180./np.pi # gr is phase angle
     gi = []  
-    for i in range(0,len(A1)):
+    for i in range(0,len(A1)):     # Adapted from Viktor's matlab code
 
         if   (A1[i] > 0) & (B1[i] > 0): # If point lies in quadrant 1
-            gi.append(-180 + gr[i] )
+            gi.append( gr[i] )    # 
         elif (A1[i] < 0) & (B1[i] > 0): # If point lies in quadrant 2
-            gi.append(-180. -gr[i])
+            gi.append(-gr[i])     # 
         elif (A1[i] < 0) & (B1[i] < 0): # if point lies in quadrant 3
-            gi.append(gr[i])
+            gi.append(180. + gr[i])
         elif (A1[i] > 0) & (B1[i] < 0): # if point lies in quadrant 4
-            gi.append(-gr[i])            
+            gi.append(180. - gr[i])            
 
     phase = [] # phase delay (in seconds)
     for i in range(0,len(T6)):
@@ -842,109 +788,54 @@ def SKMcalc(Periods,Ts,Ds,Tg,Dg,S2,Vo):
 
 
 
-def minimize(_var,frequencies,response):    # Uses data found in frequencies, and in response. 
-#    p1r, p1i, p3r, p4r, p5r,z1r,z2r,z3r, scale_fac = _var
-    p1r, p1i, p3r, p4r,z1r,z2r, scale_fac = _var
-    new_resp = pazto_freq_resp(
-        freqs=frequencies,
 
-#                          Four poles and four zeros
-        zeros=np.array([0.0 + 0.0 * 1j,
-                        0.0 + 0.0 * 1j,
-                        z1r + 0.0 * 1j,
-                        z2r + 0.0 * 1j], dtype=np.complex128),
-                        
+def findpoles(ts,ds,tg,dg,sigmasq):
+    ws = 2*np.pi / ts
+    wg = 2*np.pi / tg
+    x = 1.0
+    a = 2 * ds * ws + 2 * dg * wg
+    b = ws * ws + wg * wg + 4 * ds * ws * dg * wg * (1 - sigmasq)
+    c = 2 * ds * ws * wg * wg + 2 * dg * wg * ws * ws
+    d = ws * ws * wg * wg
+    poles = np.roots([x,a,b,c,d])
+    zeros = [0.0+0.0j,0.0+0.0j,0.0+0.0j]
+    return(poles,zeros)
 
-        poles=np.array([p1r + p1i * 1j,
-                        p1r - p1i * 1j,
-                        p3r + 0.0 * 1j,
-                        p4r + 0.0 * 1j], dtype=np.complex128),
 
-        scale_fac=scale_fac)
-    return ((np.abs(new_resp) - np.abs(response)) ** 2).sum()
 
 
 
     # import channel base parameters and return a single channel response.
 def processchannel(channel): 
-
     Component = channel[0]
     Caldate   = channel[1]
     Period,frequencies = freqrange(channel[2])
     frequencies = np.array(frequencies)
     Gain,Phase = SKMcalc(Period,channel[3],channel[4],channel[5],channel[6],channel[7],channel[8])
-    Phasedeg = phase2degree(Phase,Period)
-    response = np.array(Gain, dtype=np.float32)
-
-    evaluation = 1.0E+09 # For evaluating how close the solution is to the original curve
-    np.seterr(divide='ignore')
-    for z in range(0,128): # iterate 128 times to find the solution that best describes the phase response.
-        initial_x=[]
-        eps_step = 1e-6
-        max_iteration = 1e10
-        X0=np.random.random(7)            # 7 elements for use with 4 poles & zeros solution
-        #                                Using the minimize function, find the poles & zeros solution that best describes
-        #                                the instrument response as found in responses, on frequencies breakpoint "frequencies"
-
-        out = scipy.optimize.minimize(
-            fun=minimize,
-            args = (frequencies,response), # An important detail that cost me three weeks to discover.  
-            method="BFGS",
-            x0=X0,
-            options={"eps": eps_step, "maxiter": max_iteration}) # Experimental, reduce step size as code converges.
-        x = out.x
-        new_poles = np.array([-abs(x[0]) + abs(x[1]) * 1j,
-                              -abs(x[0]) - abs(x[1]) * 1j,
-                              -abs(x[2]) + 0.0 * 1j,
-                              -abs(x[3]) + 0.0 * 1j], 
-                              dtype=np.complex128)    
-
-     
-        new_zeros = np.array([ 0.0 + 0.0 * 1j,
-                               0.0 + 0.0 * 1j,
-                              x[4] + 0.0 * 1j,
-                              x[5] + 0.0 * 1j], dtype=np.complex128)
-        new_scale_fac = x[6]
-        #              Create the response curve that results from this theoretical new poles and zeroes solution
-        inverted_response = pazto_freq_resp(freqs=frequencies, zeros=new_zeros, poles=new_poles,scale_fac=new_scale_fac)    
-        inphase = phasecalc(inverted_response)                        # phase from inverted response, listed in degrees
-        curvefit = np.sqrt(((np.array(Phasedeg) - np.array(inphase))**2).mean()) # This is the rmse function for misfit
- 
-        if (curvefit) < evaluation:
-            final_iteration = z
-            best_poles=new_poles
-            best_zeros=new_zeros
-            best_scale_fac=new_scale_fac
-            print(f'\nIteration # {z}: Phase misfit reduced to {curvefit:0.3f}')
-            evaluation = curvefit
-<<<<<<< HEAD
-            if evaluation < 5:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
-=======
-            if evaluation < 5.0:    # Evaluation is a measure of how well the poles and zeros fit the original response & phase.
->>>>>>> origin/master
-                break               # Less than 5 is Good enough. End the loop early to speed up the process.
-        else:
-            sys.stdout.write('.')
-            sys.stdout.flush()
-    print('\n')
+    # Gain will be the convolution of AO_correction factor and sensitivity
+    Phasedeg = phase2degree(Phase,Period) # Phase is described as seconds delay at a given period so convert to degrees
+    response = np.array(Gain, dtype=np.float32) # This is the baseline that we are trying to match with the estimator.
+    print(channel[3],channel[4],channel[5],channel[6],channel[7],channel[8])
+    best_poles,best_zeros = findpoles(channel[3],channel[4],channel[5],channel[6],channel[7])
+    best_scale_fac = channel[8] # The advertised maximum sensitivity of channel
     inverted_resp = pazto_freq_resp(freqs=frequencies, zeros=best_zeros, poles=best_poles,scale_fac=best_scale_fac)
     inverted_phase = phasecalc(inverted_resp)
-
+    evaluation = 0.0
     # PAZ gain constant is a convolution of the AO normalization factor and the instrument magnification.
     # Create code that properly breaks apart the AO normalization and sensitivity such that the plot equals 1.0 at the peak
     # frequency, and report both AO normalization, peak frequency, and the amplification for use in a proper PZ file. 
     AO_index = np.argmax(np.abs(inverted_resp))
-    Sense = np.abs(inverted_resp[AO_index])
+    print(f"maximum response amplitude = {np.abs(inverted_resp[AO_index])} at element {np.argmax(np.abs(inverted_resp))}")
+    AO_norm = best_scale_fac/np.abs(inverted_resp[AO_index])
     Sensefreq = 1./Period[AO_index] # in Hz.
-    AO_norm = best_scale_fac/Sense
-    # Also must include frequency where sensitivity is highest
- 
+    #max_sense = np.abs(inverted_resp[AO_index]/AO_norm)
+    #print(f"max sensitivity = {best_scale_fac} at {Sensefreq} Hz. ")
     paz =      []
     paz.append(best_poles)
     paz.append(best_zeros)
     paz.append(best_scale_fac)
     paz.append(AO_norm)
-    paz.append(Sense)
+    paz.append(best_scale_fac) # Use best scale factor here.
     paz.append(Sensefreq)
     paz.append(evaluation)
     paz.append(Component)
@@ -953,56 +844,52 @@ def processchannel(channel):
     plotchan.append(Component)
     plotchan.append(Caldate)
     plotchan.append(Period)
-    plotchan.append(Gain)
+    plotchan.append(Gain)       # 
     plotchan.append(Phase)
-    plotchan.append(inverted_resp)
+    plotchan.append(inverted_resp*AO_norm)
     plotchan.append(inverted_phase)
     # Save the poles & zeros to a file, and print the final result to a plot and save it as well.
     return(plotchan,paz)
 
-def pazsave(outfile,Paz):
 
+
+
+
+def pazsave(outfile,Paz):
         # paz = poles and zeros.
         # paz[0] = poles
         # paz[1] = zeros
         # paz[2] = scale factor
         # paz[3] = AO normalization factor
-        # paz[4] = max sensitivity
+        # paz[4] = computed maximum; but should be scale factor 
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
         # paz[7] = component name        # paz = poles and zeros.
         # paz[8] = calibration date
-
-    for  paz in Paz:
-        
+    for  paz in Paz:      
         with open(outfile,'a+') as f:
-
             f.write("Channel: {}\n".format(paz[7]))
             print("For channel {}:\n".format(paz[7]))
             f.write("Caldate: {}\n".format(paz[8]))
             print("on Calibration date: {}\n".format(paz[8]))
-
             f.write("ZEROS {}\n".format(len(paz[1]))) # SAC may want an additional pole to convert to displacement
             print("ZEROS: {}".format(len(paz[1]))) # but these cals already represent displacement.
             for zero in paz[1]:
                 f.write("{:e} {:e}\n".format(zero.real, zero.imag))
                 print("real:{:e} Imaginary:{:e}".format(zero.real, zero.imag))
-
             f.write("POLES {}\n".format(len(paz[0])))
             print ("\nPOLES {}".format(len(paz[0])))
             for pole in paz[0]:
                 f.write("{:e} {:e}\n".format(pole.real, pole.imag))
                 print("real:{:e} Imaginary:{:e}".format(pole.real, pole.imag))
-
             f.write("AO_Normalization_factor: {:e}\n".format(paz[3]))
             print("\nAO_Normalization_Factor {:2.3f}".format(paz[3]))
-            f.write("Sensitivity: {:2.1f}\n".format(paz[4]))
-            print("Sensor sensitivity {:2.1f}".format(paz[4]))
+            f.write("Sensitivity: {:2.1f}\n".format(paz[2]))
+            print("Sensor sensitivity {:2.1f}".format(paz[2]))
             f.write("Sensitivity_frequency(Hz): {:2.2f}\n".format(paz[5]))
             print("Sensor sensitivity frequency {:2.2f} Hz".format(paz[5]))
             f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
             print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
-
     spz = "SAC pole-zero file is named %s" % ( outfile )
     print ( "\n" )
     print (spz)    # Save the paz to a file.
@@ -1046,22 +933,13 @@ def main():
                 print("========================================\n")
             outfil = os.path.join(os.path.dirname(file),(channel[0]+"_"+channel[1]))
             pazsave((outfil+"_paz.txt"),Paz)
-<<<<<<< HEAD
-
+            exportcsv(Plotchan,Paz,outfil)       # Export the parameters as a csv file for additional analysis
             if seed:   # Generate a dataless seed file 
                 generate_dataless(Paz,Metadata)
 
             respplot2(Plotchan,(outfil+"_response_period"))
             respplot1(Plotchan,(outfil+"_response"))           
 
-=======
-
-            if seed:   # Generate a dataless seed file 
-                generate_dataless(Paz,Metadata)
-
-            respplot2(Plotchan,(outfil+"_response"))           
-
->>>>>>> origin/master
     elif chanprocess:
         Metadata = []  # Initialize, because it isnt used but is passed to pazsave
         Plotchan = []
@@ -1074,11 +952,7 @@ def main():
         print(f"Evaluated misfit of phase = {paz[6]:0.3f} \n")
         outfil = os.path.join(os.getcwd(),(channel[0]+"_"+channel[1]))
         pazsave((outfil+"_paz.txt"),Paz,Metadata,seed)
-<<<<<<< HEAD
         respplot2(Plotchan,(outfil+"_response_period"))
-=======
-        respplot2(Plotchan,(outfil+"_response"))
->>>>>>> origin/master
 
     else:
         print('\nNo files processed. No channels processed.')
