@@ -27,10 +27,13 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20200811"
+__version__ = "20210211"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
+# 20210211 Properly compute AO correction factor to use Vm rather than Vo
+# Also break out the SAC polezero files into separate files, one per channel.
+#
 # 20200811 Include a default output of .sacpz in addition to the dataless seed.
 # 20200702 version 1.4
 # Major revision on how the poles and zeros are calculated.
@@ -481,8 +484,13 @@ def generate_dataless(Paz,Metadata):
     p.write_seed(outfile)
     #                        Generate the sacpz file version of this dataless seed file
     inventory = read_inventory(outfile)
-    inventory.write(os.path.join(os.getcwd(),(blk[11][0].station_identifier_code+"_"+ \
-                                        blk[50][0].station_call_letters+".sacpz")), format = "SACPZ")
+    #                        Parse out the three channels and write each out indiviually
+    for channel in inventory[0][0]:
+        pzfile = os.path.join(os.path.join(os.getcwd()),(inventory[0].code+"."+ \
+            inventory[0][0].code+"."+channel.code+".sacpz"))
+        inv = inventory.select(station = inventory[0][0].code, channel = channel.code)
+        inv.write(pzfile,format = "SACPZ")
+
 
 
 
@@ -675,7 +683,7 @@ def respplot1(plotchan,outfil):
     for i in range (0,len(plotchan)):
         Freq = [1./ float(plotchan[i][2][j]) for j in range(len(plotchan[i][2]))]        
         plt.loglog(Freq,plotchan[i][3],color=colorwheel[i],lw=5)
-        plt.loglog(Freq,np.abs(plotchan[i][5]),color=colorwheel[i],lw=1)
+        plt.loglog(Freq,np.abs(plotchan[i][5]),color='red',lw=1)
                 # plot the phase curves and their associated PAZ estimation
                 # plot the axes
     plt.xlabel('Frequency [Hz]')
@@ -693,7 +701,7 @@ def respplot1(plotchan,outfil):
         Freq = [1./ float(plotchan[i][2][j]) for j in range(len(plotchan[i][2]))]
         channelphasedeg = phase2degree(plotchan[i][4],plotchan[i][2])  # phase, period
         plt.semilogx(Freq,channelphasedeg,color=colorwheel[i],lw=3) # frequency vs phase in seconds?
-        plt.semilogx(Freq,plotchan[i][6],color=colorwheel[i],lw=1)
+        plt.semilogx(Freq,plotchan[i][6],color='red',lw=1)
     plt.title = "Phase Response of SKM"
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Phase(degrees)')
@@ -794,16 +802,17 @@ def SKMcalc(Periods,Ts,Ds,Tg,Dg,S2,Vo):
 
 
 
-def findpoles(ts,ds,tg,dg,sigmasq):
-    ws = 2*np.pi / ts
-    wg = 2*np.pi / tg
+def findpoles(ts,ds,tg,dg,sigmasq):# Given the base parameters of the calibration,
+    # Given 1.0*x^4 + a*x^3 + b*x^2 + c*x + d, return the roots that represent the poles of the solution
+    ws = 2*np.pi / ts              # sensor time constant is converted to radians per second 
+    wg = 2*np.pi / tg              # Galvanometer time constant is converted to radians per second
     x = 1.0
     a = 2 * ds * ws + 2 * dg * wg
     b = ws * ws + wg * wg + 4 * ds * ws * dg * wg * (1 - sigmasq)
     c = 2 * ds * ws * wg * wg + 2 * dg * wg * ws * ws
     d = ws * ws * wg * wg
-    poles = np.roots([x,a,b,c,d])
-    zeros = [0.0+0.0j,0.0+0.0j,0.0+0.0j]
+    poles = np.roots([x,a,b,c,d])    # Numpy module that solves for the roots of 4th degree equations
+    zeros = [0.0+0.0j,0.0+0.0j,0.0+0.0j] # fix all complex zeros to the origin point.
     return(poles,zeros)
 
 
@@ -831,7 +840,8 @@ def processchannel(channel):
     # frequency, and report both AO normalization, peak frequency, and the amplification for use in a proper PZ file. 
     AO_index = np.argmax(np.abs(inverted_resp))
     print(f"maximum response amplitude = {np.abs(inverted_resp[AO_index])} at element {np.argmax(np.abs(inverted_resp))}")
-    AO_norm = best_scale_fac/np.abs(inverted_resp[AO_index])
+    AO_norm = Gain[np.argmax(Gain)]/np.abs(inverted_resp[AO_index])
+    # AO_norm = best_scale_fac/np.abs(inverted_resp[AO_index])
     Sensefreq = 1./Period[AO_index] # in Hz.
     #max_sense = np.abs(inverted_resp[AO_index]/AO_norm)
     #print(f"max sensitivity = {best_scale_fac} at {Sensefreq} Hz. ")
