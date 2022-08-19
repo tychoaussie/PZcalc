@@ -27,12 +27,13 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20210823"
+__version__ = "20220819"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
-# 20210823 Calculate and display both Vo and Vm
-#
+# 20220819 - Report both Vo and Vm in the calibration. 
+# 20220123 - Set program up to handle six channels at a time
+# 20210222 - CHange file name to include start date for batch processing of multiple cals from same station.
 # 20210211 Properly compute AO correction factor to use Vm rather than Vo
 # Also break out the SAC polezero files into separate files, one per channel.
 #
@@ -119,7 +120,7 @@ class PZcalc(object):
                    <Tg> (Param. col. 8) = Galvonometer free period (in seconds)
                    <Dg> (param. col. 9) = Galvonometer damping constant
                    <S^2> (param. col. 10) = Sigma squared, a convolution of seismometer and galvo free periods.
-                   <Vo> (column 12) = Maximum peak amplitude to be produced on the curve.
+                   <Vo> (column 12) = peak amplitude at 90% max peak (Vm) at two frequencies bracketing the peak.
 
        Syntax2:     PZcalc <-file> <filename.cal>
 
@@ -431,17 +432,18 @@ def generate_dataless(Paz,Metadata):
         Norm_freq.append(paz[5])
         Channel.append(paz[7][paz[7].rfind('.')+1:]) # Take last section to determine the channel name
         Caldate.append(paz[8])
-    #
+     #
     #                                Open the template and modify it with the appropriate information
     #  
-    p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
+    p = Parser("C:/pyscripts/dataless.pzcalc_template6CH.seed")
     blk = p.blockettes
     # Basic changes to existing fields necessary to customize the dataless seed file
     blk[10][0].beginning_time = Metadata['beginning_time'] 
     blk[10][0].end_time = Metadata['end_time']                  # These appear to be unused within pdcc
     blk[11][0].station_identifier_code = Metadata['network_id'] # is not necessary as it is overridden by blk[50].network_code
     blk[33][0].abbreviation_description = Metadata['station_description']
-    blk[33][1].abbreviation_description = Metadata['instrument_description']
+    blk[33][1].abbreviation_description = 'SKM'#Metadata['instrument_description']
+    blk[33][2].abbreviation_description = 'SKD'
     blk[50][0].network_code = Metadata['network_code']
     blk[50][0].station_call_letters = Metadata['station_code']
     blk[50][0].site_name = Metadata['site_name']
@@ -451,12 +453,28 @@ def generate_dataless(Paz,Metadata):
     blk[50][0].start_effective_date = Metadata['start_effective_date']
     blk[50][0].end_effective_date = Metadata['end_effective_date']
     samplerate = Metadata['sample_rate'] # Output from wavetrac is 100 sps so make it so.
-    mult = int(len(blk[58])/3) # Assume that the length of the block is due to there being three channels.
+    mult = int(len(blk[58])/len(Paz)) # Assume that the length of the block is due to there being SIX channels.
+#    print( f'The length of block 52 is: {len(blk[52])}')
     for i in range(0,len(blk[52])):
         blk[52][i].sample_rate = samplerate
     for i, cha in enumerate(Channel):
+        # Must explicitly call out the dip and azimuth based on channel name
+        print(f' For channel {i}, cha is {cha}')
+        if 'Z' in cha[2]:
+            print(f'Setting channel {i} to dip angle of -90')
+            blk[52][i].dip = -90.0
+            blk[52][i].azimuth = 0.0
+        if 'N' in cha[2]:
+            print(f'Setting channel {i} to azimuth angle of 0.0')
+            blk[52][i].dip = 0.0
+            blk[52][i].azimuth = 0.0
+        if 'E' in cha[2]:
+            print(f'Setting channel {i} to azimuth angle of 90.0')
+            blk[52][i].dip = 0.0
+            blk[52][i].azimuth = 90.0
         blk[52][i].channel_identifier = cha #'HH%s' % cha
         blk[52][i].location_identifier = Metadata['location_identifier']
+        blk[52][i].instrument_identifier = int(i)/3+2
         blk[52][i].latitude = blk[50][0].latitude
         blk[52][i].longitude = blk[50][0].longitude
         blk[52][i].elevation = blk[50][0].elevation
@@ -482,14 +500,15 @@ def generate_dataless(Paz,Metadata):
         # stage sequence number 0, overall sensitivity
         blk[58][(i+1)*mult-1].sensitivity_gain = Vo[i] * 100 # There are 100 centimeters in a meter.
     outfile = os.path.join(os.getcwd(),("dataless."+blk[11][0].station_identifier_code+"_"+ \
-                                        blk[50][0].station_call_letters+".seed"))
+                                        blk[50][0].station_call_letters+"_"+Metadata['instrument_description']+"_" \
+                                        +"_"+Caldate[0]+".seed"))
     p.write_seed(outfile)
     #                        Generate the sacpz file version of this dataless seed file
     inventory = read_inventory(outfile)
     #                        Parse out the three channels and write each out indiviually
     for channel in inventory[0][0]:
         pzfile = os.path.join(os.path.join(os.getcwd()),(inventory[0].code+"."+ \
-            inventory[0][0].code+"."+channel.code+".sacpz"))
+            inventory[0][0].code+"."+channel.code+"_"+Caldate[0]+".sacpz"))
         inv = inventory.select(station = inventory[0][0].code, channel = channel.code)
         inv.write(pzfile,format = "SACPZ")
 
@@ -579,8 +598,8 @@ def freqrange(range):   # range is a value between 1 and 3 where
          np.arange(1.1,0.025,-0.05)),axis=None))
     #
     Period.append \
-        (np.concatenate((np.arange(100.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100]),axis=None))
+        (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
     #
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
@@ -624,9 +643,7 @@ def respplot2(plotchan,outfil):
         if (np.amin(p[2]) < minimum):
             minimum = np.amin(p[2])
     plt.figure()
-    pltminperiod = np.min(plotchan[0][2])/2
-    pltmaxperiod = np.max(plotchan[0][2])*2
-    plt.axis([pltminperiod,pltmaxperiod,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
+    plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
         plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5) # Base parameter amplitude curve for the channel
         plt.loglog(plotchan[i][2],np.abs(plotchan[i][5]),color='red',lw=1) # pole/zero estimation amplitude curve for the channel
@@ -706,7 +723,7 @@ def respplot1(plotchan,outfil):
         channelphasedeg = phase2degree(plotchan[i][4],plotchan[i][2])  # phase, period
         plt.semilogx(Freq,channelphasedeg,color=colorwheel[i],lw=3) # frequency vs phase in seconds?
         plt.semilogx(Freq,plotchan[i][6],color='red',lw=1)
-    plt.title = "Phase Response of SKM"
+    plt.title = "Phase Response of instrument"
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Phase(degrees)')
     plt.text(maxfreq*2.6, 0.1, 'Phase (degrees)', fontsize=11,
@@ -847,9 +864,7 @@ def processchannel(channel):
     AO_norm = Gain[np.argmax(Gain)]/np.abs(inverted_resp[AO_index])
     # AO_norm = best_scale_fac/np.abs(inverted_resp[AO_index])
     Sensefreq = 1./Period[AO_index] # in Hz.
-
-#    max_sense = np.abs(inverted_resp[AO_index]/AO_norm)
-    max_sense = np.max(Gain)
+    max_sense = np.max(Gain) # np.abs(inverted_resp[AO_index]/AO_norm)
     print(f"Vo = {best_scale_fac} at {Sensefreq} Hz. ")
     print (f"Vm = {max_sense} at {Sensefreq:0.3f} Hz. ")
     print (f"max gain = {np.max(Gain)} at {Sensefreq:0.3f} Hz.")
@@ -911,8 +926,8 @@ def pazsave(outfile,Paz):
             print("Sensor sensitivity {:2.1f}".format(paz[2]))
             f.write("Sensitivity_frequency(Hz): {:2.2f}\n".format(paz[5]))
             print("Sensor sensitivity frequency {:2.2f} Hz".format(paz[5]))
-            f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
-            print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
+#           f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
+#            print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
     spz = "SAC pole-zero file is named %s" % ( outfile )
     print ( "\n" )
     print (spz)    # Save the paz to a file.
