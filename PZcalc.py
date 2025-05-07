@@ -27,12 +27,21 @@ SOFTWARE.'''
 
 
 __author__ = "Daniel Burk <burkdani@msu.edu>"
-__version__ = "20210823"
+__version__ = "20250507"
 __license__ = "MIT"
 
 # -*- coding: utf-8 -*-
-# 20210823 Calculate and display both Vo and Vm
-#
+# 20250507 - line 473 - Add in a line to correct the digital decimation block input sample rate so it will correctly parse.
+# 20250430 - Fix scipy.signal.zpk2tf on line 749 to comply with new python signal package requiremetns
+# 20240514 - Fix problem with dataless seed generation where it placed the dataless in the CWD rather than the target folder.
+# 20221107 - Add experimental frequency range 4. Add a print statement outlining version number for the log files.
+# 20221103 - Set up code to run either with a six channel or a three channel configuration, and fix a bug that improperly sets sensitivity_gain stage 0
+#            when inputting a three-channel .CAL file. Remove the extra underscore within the dataless SEED output file name.
+#            Update the dataless SEED templates , both three channel and six channel versions.
+#            Adjust the output plots to increase size.
+# 20220819 - Report both Vo and Vm in the calibration. 
+# 20220123 - Set program up to handle six channels at a time
+# 20210222 - CHange file name to include start date for batch processing of multiple cals from same station.
 # 20210211 Properly compute AO correction factor to use Vm rather than Vo
 # Also break out the SAC polezero files into separate files, one per channel.
 #
@@ -100,126 +109,124 @@ from obspy import read_inventory
 
  
 
-class PZcalc(object):
-    '''PZcalc V1.3 inputs the six published parameters from the Soviet calibration parameter booklet
-       and converts these parameters into a response curve plot as well as a best estimate
-       of a four pole/five zero solution for a single channel. It will generate plots that can be saved
-       and included for publication in a station equipment history file. As an option, a text file
-       can be specified in cases where a three-channel solution is desired. This is the preferred
-       method for most analog stations with multiple channels.
+#	PZcalc V1.3 inputs the six published parameters from the Soviet calibration parameter booklet
+# and converts these parameters into a response curve plot as well as a best estimate
+# of a four pole/five zero solution for a single channel. It will generate plots that can be saved
+# and included for publication in a station equipment history file. As an option, a text file
+# can be specified in cases where a three-channel solution is desired. This is the preferred
+# method for most analog stations with multiple channels.
 
-       Syntax1:     PZcalc <-chan> <net.stationname.channel> <freqrange> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
+# Syntax1:     PZcalc <-chan> <net.stationname.channel> <freqrange> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
     
-       
-       where:      <netname.stationname.channel> is the station code (ISC preferred) and channel for this station
-                                         (i.e. SKM-NS, SKM-EW, SKM-Z)
-                   <freqrange> is the range number. There are three ranges, 1, 2, or 3.
-                   <Ts> (parameter from column 6) = Sensor free period (in seconds)
-                   <Ds> (parameter col. 7) = sensor damping constant
-                   <Tg> (Param. col. 8) = Galvonometer free period (in seconds)
-                   <Dg> (param. col. 9) = Galvonometer damping constant
-                   <S^2> (param. col. 10) = Sigma squared, a convolution of seismometer and galvo free periods.
-                   <Vo> (column 12) = Maximum peak amplitude to be produced on the curve.
+# 
+# where:#<netname.stationname.channel> is the station code (ISC preferred) and channel for this station
+######     (i.e. SKM-NS, SKM-EW, SKM-Z)
+### <freqrange> is the range number. There are three ranges, 1, 2, or 3.
+### <Ts> (parameter from column 6) = Sensor free period (in seconds)
+### <Ds> (parameter col. 7) = sensor damping constant
+### <Tg> (Param. col. 8) = Galvonometer free period (in seconds)
+### <Dg> (param. col. 9) = Galvonometer damping constant
+### <S^2> (param. col. 10) = Sigma squared, a convolution of seismometer and galvo free periods.
+### <Vo> (column 12) = peak amplitude at 90% max peak (Vm) at two frequencies bracketing the peak.
 
-       Syntax2:     PZcalc <-file> <filename.cal>
+# Syntax2:     PZcalc <-file> <filename.cal>
 
-       where:      <filename.cal> is a single file name for processing. 
-                    Output will be placed within the folder containing this file.
-                    Using this method enables you to input the station calibration date.
+# where:#<filename.cal> is a single file name for processing. 
+###  Output will be placed within the folder containing this file.
+###  Using this method enables you to input the station calibration date.
 
-       Syntax3:     PZcalc <-crawl> <targetfolder>
+# Syntax3:     PZcalc <-crawl> <targetfolder>
 
-        where:     <targetfolder> will contain at least one .cal file for processing. 
-                    Output files will be placed within the target folder using station name as part of the file name.
+#  where:     <targetfolder> will contain at least one .cal file for processing. 
+###  Output files will be placed within the target folder using station name as part of the file name.
 
-       Syntax4:     PZcalc <-seed> <filename.cal>
+# Syntax4:     PZcalc <-seed> <filename.cal>
 
-       where:      <filename.cal> is a single file name for processing, including an additional fifteen fields
-                    necessary for the generation of a dataless seed file.
-                    Output will be placed within the folder containing this file.
-                    Using this method enables you to input the station calibration date.
+# where:#<filename.cal> is a single file name for processing, including an additional fifteen fields
+###  necessary for the generation of a dataless seed file.
+###  Output will be placed within the folder containing this file.
+###  Using this method enables you to input the station calibration date.
 
-                   
-        PZCalc will generate two plots, as well as an output file called "<stationname>.paz" containing the 
-        poles and zeros for the station, along with the sensitivity and AO correction factor. 
-        These plots and text may then be placed within the station file.
-        
-
-
-       Useage requirements: You must have installed both Python version 3 
-       and NumPy on your machine in order to run this package. Dependencies
-       include the os, csv, time,matplotlib, and Scipy.
-
-       Typical useage: -chan option: (single station, single channel)
-       c:\> python PXCalc.py -chan <net.Station.channel> <freqrange> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
-
-       As a single channel example, using -chan option:
-       c:\Pyscripts> python PZcalc.py -chan RY.UURS.MHZ 2 1.0 0.54 0.37 1.71 0.16 19010
-       
-       <freqrange> consists of three different frequency bands over which the calibration should occur:
-            1 = 0.1   to 30 seconds: for long period sensors such as the SKD (CKD)
-            2 = 0.125 to 10 seconds: For short period sensors, like Vegik, SKM, SM3, S-13
-            3 = 0.01  to 5 seconds: For really short period sensors such as the C-5-C2
-       --
-
-       Typical useage: -file option: (file name for processing a single cal file:)
-       c:\> python PZCalc.py -file <filename> where, <filename> is a single station with a ".cal" extension.
+### 
+#  PZCalc will generate two plots, as well as an output file called "<stationname>.paz" containing the 
+#  poles and zeros for the station, along with the sensitivity and AO correction factor. 
+#  These plots and text may then be placed within the station file.
+#  
 
 
-       Typical useage -crawl option: for processing multiple calibration files:
-       c:\> python PZCalc.py -crawl <targetfolder>
-            where,
-            <targetfolder> is the folder containing the calibration files ending in a .cal extension.
+# Useage requirements: You must have installed both Python version 3 
+# and NumPy on your machine in order to run this package. Dependencies
+# include the os, csv, time,matplotlib, and Scipy.
 
-        The output files will be placed within the same folder. They will be of the type .png and .paz
-        --       
-        Sample file format:
-        The input file that is used consists of a station line, and a channel line for each channel within the station.
-        The file name of the station should consist of <networkcode>.<ISCstationcode>.cal for single stations.
-        If desired, the program will crawl the entire folder looking for cal parameter files with the extension .cal
-        The program will create plots for each station showing all three axes, sensitivity vs time (in seconds) to replicate
-        the analog sensitivity curve as found in published booklets of the former USSR.
-        The program will also create a series of poles and zeros files for each station.
-        Each .CAL should match the following format. Each cal file should have no less than one line.
+# Typical useage: -chan option: (single station, single channel)
+# c:\> python PXCalc.py -chan <net.Station.channel> <freqrange> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
 
-        <netname_stationname.channel> <DD/MM/YYYY> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
+# As a single channel example, using -chan option:
+# c:\Pyscripts> python PZcalc.py -chan RY.UURS.MHZ 2 1.0 0.54 0.37 1.71 0.16 19010
+# 
+# <freqrange> consists of three different frequency bands over which the calibration should occur:
+##1 = 0.1   to 30 seconds: for long period sensors such as the SKD (CKD)
+##2 = 0.125 to 10 seconds: For short period sensors, like Vegik, SKM, SM3, S-13
+##3 = 0.01  to 5 seconds: For really short period sensors such as the C-5-C2
+# --
 
-        As an example, for filename RY_UURS.CAL, where analog channel will be digitized at 100 msec/pixel or less:
+# Typical useage: -file option: (file name for processing a single cal file:)
+# c:\> python PZCalc.py -file <filename> where, <filename> is a single station with a ".cal" extension.
 
-        RY_UURS.MHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
-        RY_UURS.MHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
-        RY_UURS.MHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
-        -------
-        As another example, if you want to generate a dataless seed file for the station, 
-        add these additional fifteen fields to the calibration file using the following template:
-        Good practive in file naming is to differentiate the cal file by adding SEED to the filename,
-        such as: RY_UURS_SEED.CAL for the following example.
 
-        * Note that a space is used as the field separator within the following fields. 
+# Typical useage -crawl option: for processing multiple calibration files:
+# c:\> python PZCalc.py -crawl <targetfolder>
+##where,
+##<targetfolder> is the folder containing the calibration files ending in a .cal extension.
 
-        Use the -seed option in lieu of the -file option to use this cal file format.
+#  The output files will be placed within the same folder. They will be of the type .png and .paz
+#  --# 
+#  Sample file format:
+#  The input file that is used consists of a station line, and a channel line for each channel within the station.
+#  The file name of the station should consist of <networkcode>.<ISCstationcode>.cal for single stations.
+#  If desired, the program will crawl the entire folder looking for cal parameter files with the extension .cal
+#  The program will create plots for each station showing all three axes, sensitivity vs time (in seconds) to replicate
+#  the analog sensitivity curve as found in published booklets of the former USSR.
+#  The program will also create a series of poles and zeros files for each station.
+#  Each .CAL should match the following format. Each cal file should have no less than one line.
 
-        beginning_time 1949-08-29T00:00:00.000000Z 
-        end_time 1991-12-26T23:59:59.999999Z
-        network_id RY
-        station_description UURS
-        instrument_description SKM3
-        network_code RY
-        station_code UURS
-        location_identifier
-        site_name Ust-Urkima
-        latitude 55.31
-        longitude 123.16
-        elevation 540
-        start_effective_date 1949-08-29T00:00:00.000000Z
-        end_effective_date 2020-01-14T23:59:59.000000Z
-        sample_rate 100
-        RY.UURS.HHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
-        RY.UURS.HHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
-        RY.UURS.HHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
+#  <netname_stationname.channel> <DD/MM/YYYY> <Ts> <Ds> <Tg> <Dg> <S^2> <Vo>
 
-        
-       '''
+#  As an example, for filename RY_UURS.CAL, where analog channel will be digitized at 100 msec/pixel or less:
+
+#  RY_UURS.MHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
+#  RY_UURS.MHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
+#  RY_UURS.MHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
+#  -------
+#  As another example, if you want to generate a dataless seed file for the station, 
+#  add these additional fifteen fields to the calibration file using the following template:
+#  Good practive in file naming is to differentiate the cal file by adding SEED to the filename,
+#  such as: RY_UURS_SEED.CAL for the following example.
+
+#  * Note that a space is used as the field separator within the following fields. 
+
+#  Use the -seed option in lieu of the -file option to use this cal file format.
+#  You can add up to six channels to the calibration to account for both a short-period (like SKM,SM3) 
+#  and long-period instrument (like SK,SKD) for the current epoch.
+
+#  beginning_time 1949-08-29T00:00:00.000000Z 
+#  end_time 1991-12-26T23:59:59.999999Z
+#  network_id RY
+#  station_description UURS
+#  instrument_description SKM3
+#  network_code RY
+#  station_code UURS
+#  location_identifier
+#  site_name Ust-Urkima
+#  latitude 55.31
+#  longitude 123.16
+#  elevation 540
+#  start_effective_date 1949-08-29T00:00:00.000000Z
+#  end_effective_date 2020-01-14T23:59:59.000000Z
+#  sample_rate 100
+#  RY.UURS.HHN 06/04/1987 1 1.63 0.530 0.360 1.840 0.160 53140
+#  RY.UURS.HHE 06/04/1987 1 1.06 0.615 0.330 1.710 0.229 27260
+#  RY.UURS.HHZ 06/04/1987 1 1.00 0.540 0.370 1.710 0.160 19010
 
 def options():      # Get command line options and process them
     fileprocess = False
@@ -232,11 +239,12 @@ def options():      # Get command line options and process them
         if 'help' in sys.argv[1].lower():
             print(PZcalc.__doc__)
 
-        elif 'crawl' in sys.argv[1].lower():
+        elif 'crawl' in sys.argv[1].lower(): # Process multiple cal seed files, all located within the same folder.
                     # there should be one additional option: The destination folder.
             try:
                 if len(sys.argv) > 2:
                     fileprocess = True
+                    seed = True
                     filelist = calfiles(sys.argv[2])
                 else:
                     print("-crawl requires an additional argument representing the target folder.\n")
@@ -391,7 +399,7 @@ def dataless_load(infile):
 # Generate the dataless seed file, based on the metadata and the poles & zeros included in Paz
 #
 
-def generate_dataless(Paz,Metadata):  
+def generate_dataless(Paz,Metadata,file):  
         # paz = poles and zeros.
         # paz[0] = poles
         # paz[1] = zeros
@@ -431,17 +439,25 @@ def generate_dataless(Paz,Metadata):
         Norm_freq.append(paz[5])
         Channel.append(paz[7][paz[7].rfind('.')+1:]) # Take last section to determine the channel name
         Caldate.append(paz[8])
-    #
+     #
     #                                Open the template and modify it with the appropriate information
-    #  
-    p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
+    #
+    if len(Paz) == 6:    
+        p = Parser("C:/pyscripts/dataless.pzcalc_template6CH.seed")
+    elif len(Paz) == 3:
+        p = Parser("C:/pyscripts/dataless.pzcalc_template.seed")
+    else:
+        print("Error! Total number of channels found within Paz must be either three or six channels. No more, no less.")
+        return()
     blk = p.blockettes
     # Basic changes to existing fields necessary to customize the dataless seed file
     blk[10][0].beginning_time = Metadata['beginning_time'] 
     blk[10][0].end_time = Metadata['end_time']                  # These appear to be unused within pdcc
     blk[11][0].station_identifier_code = Metadata['network_id'] # is not necessary as it is overridden by blk[50].network_code
     blk[33][0].abbreviation_description = Metadata['station_description']
-    blk[33][1].abbreviation_description = Metadata['instrument_description']
+    blk[33][1].abbreviation_description = 'SKM'
+    if len(Paz) == 6:
+         blk[33][2].abbreviation_description = 'SKD'
     blk[50][0].network_code = Metadata['network_code']
     blk[50][0].station_call_letters = Metadata['station_code']
     blk[50][0].site_name = Metadata['site_name']
@@ -451,12 +467,29 @@ def generate_dataless(Paz,Metadata):
     blk[50][0].start_effective_date = Metadata['start_effective_date']
     blk[50][0].end_effective_date = Metadata['end_effective_date']
     samplerate = Metadata['sample_rate'] # Output from wavetrac is 100 sps so make it so.
-    mult = int(len(blk[58])/3) # Assume that the length of the block is due to there being three channels.
+    mult = int(len(blk[58])/len(Paz)) # Assume that the length of the block is due to there being SIX channels.
+
     for i in range(0,len(blk[52])):
         blk[52][i].sample_rate = samplerate
+        blk[57][i].input_sample_rate = samplerate # Add this to make the metadata consistent for conversion into stationXML - drb 05/05/2025
     for i, cha in enumerate(Channel):
-        blk[52][i].channel_identifier = cha #'HH%s' % cha
+        # Must explicitly call out the dip and azimuth based on channel name
+        print(f' For channel {i}, cha is {cha}')
+        if 'Z' in cha[2]:
+            print(f'Setting channel {i} to dip angle of -90')
+            blk[52][i].dip = -90.0
+            blk[52][i].azimuth = 0.0
+        if 'N' in cha[2]:
+            print(f'Setting channel {i} to azimuth angle of 0.0')
+            blk[52][i].dip = 0.0
+            blk[52][i].azimuth = 0.0
+        if 'E' in cha[2]:
+            print(f'Setting channel {i} to azimuth angle of 90.0')
+            blk[52][i].dip = 0.0
+            blk[52][i].azimuth = 90.0
+        blk[52][i].channel_identifier = cha 
         blk[52][i].location_identifier = Metadata['location_identifier']
+        blk[52][i].instrument_identifier = int(i)/3+2
         blk[52][i].latitude = blk[50][0].latitude
         blk[52][i].longitude = blk[50][0].longitude
         blk[52][i].elevation = blk[50][0].elevation
@@ -476,20 +509,22 @@ def generate_dataless(Paz,Metadata):
         blk[53][i].A0_normalization_factor = AO_norm[i]
         blk[53][i].normalization_frequency = Norm_freq[i]
         # stage sequence number 1, seismometer gain
+        blk[57][i].input_sample_rate = samplerate             # Added to make compatable with IRIS stationxml validator tool. 05/07/2025 - drb
         blk[58][i*mult].sensitivity_gain = Vo[i]
         # stage sequence number 3, digitizer gain
         blk[58][i*mult+2].sensitivity_gain = 100.0 # This is fixed as 100 cm to 1 m, per PNE2SAC output.
         # stage sequence number 0, overall sensitivity
         blk[58][(i+1)*mult-1].sensitivity_gain = Vo[i] * 100 # There are 100 centimeters in a meter.
-    outfile = os.path.join(os.getcwd(),("dataless."+blk[11][0].station_identifier_code+"_"+ \
-                                        blk[50][0].station_call_letters+".seed"))
+    outfile = os.path.join(os.path.dirname(file),("dataless."+blk[11][0].station_identifier_code+"_"+ \
+                                        blk[50][0].station_call_letters+"_"+Metadata['instrument_description']+"_" \
+                                        +Caldate[0]+".seed"))
     p.write_seed(outfile)
     #                        Generate the sacpz file version of this dataless seed file
     inventory = read_inventory(outfile)
     #                        Parse out the three channels and write each out indiviually
     for channel in inventory[0][0]:
         pzfile = os.path.join(os.path.join(os.getcwd()),(inventory[0].code+"."+ \
-            inventory[0][0].code+"."+channel.code+".sacpz"))
+            inventory[0][0].code+"."+channel.code+"_"+Caldate[0]+".sacpz"))
         inv = inventory.select(station = inventory[0][0].code, channel = channel.code)
         inv.write(pzfile,format = "SACPZ")
 
@@ -565,13 +600,12 @@ def exportcsv(plotchan,paz,outfil): # Export the gain and phase curves
 
 
 
-def freqrange(range):   # range is a value between 1 and 3 where
+def freqrange(range,ts):   # range is a value between 1 and 3 where
                         # 1  = 0.05 to 30 seconds ( 0.03 - 20Hz) (medium-long period i.e. SKD)
                         # 2 = 0.067 to 20 seconds  (short period, i.e. SKM,SM3,S1P)
                         # 3 = 0.005 to 10 seconds  (very short period, i.e. geophone)
-                        # 4 = experimental where ts = 12.5 ds = 1.2
-    ts = 1.7
-    ds = 0.42
+                        # 4 = experimental range based on the resonance frequency of the seismometer
+                        # Range 4 has not yet been tested on a multichannel calibration with both short period and long period instruments. 
     Period = []
     Frequency = []
     Period.append \
@@ -579,16 +613,23 @@ def freqrange(range):   # range is a value between 1 and 3 where
          np.arange(1.1,0.025,-0.05)),axis=None))
     #
     Period.append \
-        (np.concatenate((np.arange(100.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
-         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100]),axis=None))
+        (np.concatenate((np.arange(20.0,10.0,-2.5),np.arange(9.0,4.0,-1.5),\
+         np.arange(4.0,2.0,-0.5),np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.100,0.067,0.04,0.025]),axis=None))
     #
     Period.append \
         (np.concatenate((np.arange(10.0,4.0,-1.0),np.arange(4.0,2.0,-0.5), \
          np.arange(2.0,0.5,-0.1),[0.5,0.333,0.25,0.2,0.125,0.01,0.005]),axis=None))
     #
-    Period.append \
-        (np.concatenate(([8*ts,4*ts,2*ts,1.5*ts,1.3*ts,1.1*ts,1.05*ts,ts,0.95*ts,0.9*ts,0.8*ts,0.7*ts,0.5*ts,0.25*ts,0.125*ts,0.1*ts], \
-         [1.1*ds,1.05*ds,ds,0.95*ds,0.9*ds,0.8*ds,0.7*ds,0.5*ds,0.25*ds,0.125*ds,0.1*ds,0.05*ds]),axis=None))
+    Short_period = [20*ts,10*ts,8*ts,6*ts,5*ts,4*ts,3*ts,2*ts,1.5*ts,1.25*ts,1.125*ts,1*ts, \
+          0.975*ts,0.95*ts,0.925*ts,0.9*ts,0.875*ts,0.85*ts,0.825*ts,0.8*ts,0.75*ts,0.725*ts,0.7*ts, \
+          0.675*ts,0.65*ts,0.625*ts,0.6*ts,0.575*ts,0.55*ts,0.525*ts,0.5*ts,0.475*ts,0.45*ts,0.425*ts, \
+          0.4*ts,0.375*ts,0.35*ts,0.325*ts,0.3*ts,0.275*ts,0.25*ts,0.225*ts,0.2*ts,0.175*ts,0.15*ts,0.125*ts, \
+          0.1*ts,0.09*ts,0.08*ts,0.07*ts,0.06*ts,0.05*ts,0.04*ts,0.03*ts,0.02*ts,0.01*ts]
+    Long_period = [0.009*ts,0.008*ts,0.007*ts,0.006*ts,0.005*ts,0.004*ts,0.003*ts,0.002*ts,0.001*ts]
+    if ts > 2.0:
+        Period.append(np.concatenate((Short_period,Long_period),axis=None))
+    else:
+        Period.append(Short_period)
 
     for period in Period[range-1]:
         Frequency.append(1./period)
@@ -623,10 +664,8 @@ def respplot2(plotchan,outfil):
             maximum = np.amax(p[2])
         if (np.amin(p[2]) < minimum):
             minimum = np.amin(p[2])
-    plt.figure()
-    pltminperiod = np.min(plotchan[0][2])/2
-    pltmaxperiod = np.max(plotchan[0][2])*2
-    plt.axis([pltminperiod,pltmaxperiod,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
+    plt.figure(figsize=(7.68,10.24))
+    plt.axis([0.01,40,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
     for i in range (0,len(plotchan)):        
         plt.loglog(plotchan[i][2],plotchan[i][3],color=colorwheel[i],lw=5) # Base parameter amplitude curve for the channel
         plt.loglog(plotchan[i][2],np.abs(plotchan[i][5]),color='red',lw=1) # pole/zero estimation amplitude curve for the channel
@@ -680,7 +719,7 @@ def respplot1(plotchan,outfil):
         if (np.amin(p[2]) < minfreq):
             minfreq = 1/np.amax(p[2]) # minimum frequency
     print(f'Minimum frequency = {minfreq} Hz and maximum frequency = {maxfreq}')
-    plt.figure()
+    plt.figure(figsize=(6.4,10.8))
     plt.subplot(211)
     plt.axis([minfreq*0.5,maxfreq*2,0.1,100000]) # scale the plot between 0.1 and 100K magnification
 #    plt.axis([0.01,10,0.1,100000])            # plot the amplitude curves for each of the loaded channels and their associated PAZ estimation
@@ -706,7 +745,7 @@ def respplot1(plotchan,outfil):
         channelphasedeg = phase2degree(plotchan[i][4],plotchan[i][2])  # phase, period
         plt.semilogx(Freq,channelphasedeg,color=colorwheel[i],lw=3) # frequency vs phase in seconds?
         plt.semilogx(Freq,plotchan[i][6],color='red',lw=1)
-    plt.title = "Phase Response of SKM"
+    plt.title = "Phase Response of instrument"
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Phase(degrees)')
     plt.text(maxfreq*2.6, 0.1, 'Phase (degrees)', fontsize=11,
@@ -727,7 +766,7 @@ def respplot1(plotchan,outfil):
 
                     # PAZ subroutine that uses the same frequencies as derived from original curve
 def pazto_freq_resp(freqs, zeros, poles, scale_fac): 
-    b, a = scipy.signal.ltisys.zpk2tf(zeros, poles, scale_fac)
+    b, a = scipy.signal.zpk2tf(zeros, poles, scale_fac)
     if not isinstance(a, np.ndarray) and a == 1.0:
         a = [1.0]
     return scipy.signal.freqs(b, a, freqs * 2 * np.pi)[1] 
@@ -803,9 +842,17 @@ def SKMcalc(Periods,Ts,Ds,Tg,Dg,S2,Vo):
                     
     return(V6,phase) # return gain (V6) and phase delay in seconds.
 
-
-
-
+# findpoles:
+# Determine the poles of a four pole, three zero solution that describes response of the system.
+# Based on equation A1.68 from appendix A of OFR2014-1218 by Peterson&Hutt, 
+# Hagiwara's response equation, that
+# describes the 4 poles (S^4,S^3,S^2,S, and 1) as functions of the 5 base parameters,
+# ds = Damping ratio of the sensor
+# ws = time constant of the sensor ts, in radians/second
+# dg = Damping ratio of the galvonometer
+# wg = time constant of the galvonometer ts, in radians/second
+# sigmasq = Coupling coefficient for the system
+# 
 def findpoles(ts,ds,tg,dg,sigmasq):# Given the base parameters of the calibration,
     # Given 1.0*x^4 + a*x^3 + b*x^2 + c*x + d, return the roots that represent the poles of the solution
     ws = 2*np.pi / ts              # sensor time constant is converted to radians per second 
@@ -821,13 +868,11 @@ def findpoles(ts,ds,tg,dg,sigmasq):# Given the base parameters of the calibratio
 
 
 
-
-
     # import channel base parameters and return a single channel response.
 def processchannel(channel): 
     Component = channel[0]
     Caldate   = channel[1]
-    Period,frequencies = freqrange(channel[2])
+    Period,frequencies = freqrange(channel[2],channel[3]) # Send the range as well as the Ts value of the seismometer in case of range 4 selection
     frequencies = np.array(frequencies)
     Gain,Phase = SKMcalc(Period,channel[3],channel[4],channel[5],channel[6],channel[7],channel[8])
     # Gain will be the convolution of AO_correction factor and sensitivity
@@ -835,22 +880,19 @@ def processchannel(channel):
     response = np.array(Gain, dtype=np.float32) # This is the baseline that we are trying to match with the estimator.
     print(channel[3],channel[4],channel[5],channel[6],channel[7],channel[8])
     best_poles,best_zeros = findpoles(channel[3],channel[4],channel[5],channel[6],channel[7])
-    best_scale_fac = channel[8] # The advertised maximum sensitivity of channel
+    best_scale_fac = channel[8] # This is Vo from the published calibration parameters.
     inverted_resp = pazto_freq_resp(freqs=frequencies, zeros=best_zeros, poles=best_poles,scale_fac=best_scale_fac)
     inverted_phase = phasecalc(inverted_resp)
     evaluation = 0.0
     # PAZ gain constant is a convolution of the AO normalization factor and the instrument magnification.
     # Create code that properly breaks apart the AO normalization and sensitivity such that the plot equals 1.0 at the peak
     # frequency, and report both AO normalization, peak frequency, and the amplification for use in a proper PZ file. 
-    AO_index = np.argmax(np.abs(inverted_resp))
+    AO_index = np.argmax(np.abs(inverted_resp)) # Find frequency at which Vm is located
     print(f"maximum response amplitude = {np.abs(inverted_resp[AO_index])} at element {np.argmax(np.abs(inverted_resp))}")
     AO_norm = Gain[np.argmax(Gain)]/np.abs(inverted_resp[AO_index])
-    # AO_norm = best_scale_fac/np.abs(inverted_resp[AO_index])
     Sensefreq = 1./Period[AO_index] # in Hz.
-
-#    max_sense = np.abs(inverted_resp[AO_index]/AO_norm)
-    max_sense = np.max(Gain)
-    print(f"Vo = {best_scale_fac} at {Sensefreq} Hz. ")
+    max_sense = np.max(Gain) # Highest amplitiude on the curve is the maximum sensitivity Vm
+    print(f"Vo = {best_scale_fac}  ")
     print (f"Vm = {max_sense} at {Sensefreq:0.3f} Hz. ")
     print (f"max gain = {np.max(Gain)} at {Sensefreq:0.3f} Hz.")
     paz =      []
@@ -911,8 +953,8 @@ def pazsave(outfile,Paz):
             print("Sensor sensitivity {:2.1f}".format(paz[2]))
             f.write("Sensitivity_frequency(Hz): {:2.2f}\n".format(paz[5]))
             print("Sensor sensitivity frequency {:2.2f} Hz".format(paz[5]))
-            f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
-            print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
+#           f.write("Evaluation_Factor: {:2.1f} \n------\n".format(paz[6]))
+#            print("Evaluation factor for this estimate (Less than 12 is good): {:2.1f} \n------\n\n".format(paz[6]))
     spz = "SAC pole-zero file is named %s" % ( outfile )
     print ( "\n" )
     print (spz)    # Save the paz to a file.
@@ -938,7 +980,7 @@ def main():
         # paz[5] = frequency of max sensitivity in Hz
         # paz[6] = evaluation factor ( a measure of how good the estimation is at recreating the original resposne)
         # paz[7] = component name        # paz = poles and zeros.
-    
+    print(f"Michigan State University's PZCalc;  version # {__version__}: \n\n")
     fileprocess,filelist,chanprocess,channel,seed = options()
     if fileprocess:
         for file in filelist:
@@ -958,7 +1000,7 @@ def main():
             pazsave((outfil+"_paz.txt"),Paz)
             exportcsv(Plotchan,Paz,outfil)       # Export the parameters as a csv file for additional analysis
             if seed:   # Generate a dataless seed file 
-                generate_dataless(Paz,Metadata)
+                generate_dataless(Paz,Metadata,file)
 
             respplot2(Plotchan,(outfil+"_response_period"))
             respplot1(Plotchan,(outfil+"_response"))           
